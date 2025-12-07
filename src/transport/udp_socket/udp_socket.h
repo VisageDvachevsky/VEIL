@@ -32,7 +32,7 @@ class UdpSocket {
   bool connect(const UdpEndpoint& remote, std::error_code& ec);
   bool send(std::span<const std::uint8_t> data, const UdpEndpoint& remote, std::error_code& ec);
   bool send_batch(std::span<const UdpPacket> packets, std::error_code& ec);
-  bool poll(ReceiveHandler handler, int timeout_ms, std::error_code& ec);
+  bool poll(const ReceiveHandler& handler, int timeout_ms, std::error_code& ec);
   void close();
 
   int fd() const { return fd_; }

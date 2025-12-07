@@ -77,7 +77,7 @@ void ReplayWindow::shift(std::size_t delta) {
 bool ReplayWindow::get_bit(std::size_t index) const {
   const auto word = index / kBitsPerWord;
   const auto bit = index % kBitsPerWord;
-  return (bits_[word] >> bit) & 1U;
+  return ((bits_[word] >> bit) & 1U) != 0U;
 }
 
 void ReplayWindow::set_bit(std::size_t index) {
