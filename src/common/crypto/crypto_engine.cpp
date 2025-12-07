@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/crypto/random.h"
+#include "common/crypto/secure_buffer.h"
 
 namespace {
 void ensure_sodium_ready() {
@@ -25,6 +26,8 @@ std::array<std::uint8_t, veil::crypto::kHmacSha256Len> hmac_sha256_array(
   crypto_auth_hmacsha256_init(&state, key.data(), key.size());
   crypto_auth_hmacsha256_update(&state, data.data(), data.size());
   crypto_auth_hmacsha256_final(&state, out.data());
+  // SECURITY: Clear HMAC state containing key material
+  sodium_memzero(&state, sizeof(state));
   return out;
 }
 
@@ -96,21 +99,41 @@ std::vector<std::uint8_t> hkdf_expand(std::span<const std::uint8_t, kHmacSha256L
 
     std::array<std::uint8_t, kHmacSha256Len> block{};
     crypto_auth_hmacsha256_final(&state, block.data());
+    // SECURITY: Clear HMAC state containing key material
+    sodium_memzero(&state, sizeof(state));
+
     const std::size_t to_copy = std::min<std::size_t>(block.size(), length - generated);
     std::copy_n(block.begin(), to_copy, okm.begin() + static_cast<std::ptrdiff_t>(generated));
+
+    // SECURITY: Clear previous block before reassignment
+    if (!previous.empty()) {
+      sodium_memzero(previous.data(), previous.size());
+    }
     previous.assign(block.begin(), block.end());
+
+    // SECURITY: Clear the block after copying
+    sodium_memzero(block.data(), block.size());
+
     generated += to_copy;
     ++counter;
   }
+
+  // SECURITY: Clear final previous buffer
+  if (!previous.empty()) {
+    sodium_memzero(previous.data(), previous.size());
+  }
+
   return okm;
 }
 
 SessionKeys derive_session_keys(std::span<const std::uint8_t, kSharedSecretSize> shared_secret,
                                 std::span<const std::uint8_t> salt, std::span<const std::uint8_t> info,
                                 bool initiator) {
-  const auto prk = hkdf_extract(salt, shared_secret);
-  const auto material =
-      hkdf_expand(prk, info, 2 * kAeadKeyLen + 2 * kNonceLen);
+  auto prk = hkdf_extract(salt, shared_secret);
+  auto material = hkdf_expand(prk, info, 2 * kAeadKeyLen + 2 * kNonceLen);
+
+  // SECURITY: Clear PRK immediately after use
+  sodium_memzero(prk.data(), prk.size());
 
   SessionKeys keys{};
   std::size_t offset = 0;
@@ -129,6 +152,9 @@ SessionKeys derive_session_keys(std::span<const std::uint8_t, kSharedSecretSize>
   load_block(first_nonce);
   load_block(second_nonce);
 
+  // SECURITY: Clear raw key material after extracting individual keys
+  sodium_memzero(material.data(), material.size());
+
   if (initiator) {
     keys.send_key = first_key;
     keys.recv_key = second_key;
@@ -140,6 +166,13 @@ SessionKeys derive_session_keys(std::span<const std::uint8_t, kSharedSecretSize>
     keys.send_nonce = second_nonce;
     keys.recv_nonce = first_nonce;
   }
+
+  // SECURITY: Clear temporary key arrays
+  sodium_memzero(first_key.data(), first_key.size());
+  sodium_memzero(second_key.data(), second_key.size());
+  sodium_memzero(first_nonce.data(), first_nonce.size());
+  sodium_memzero(second_nonce.data(), second_nonce.size());
+
   return keys;
 }
 

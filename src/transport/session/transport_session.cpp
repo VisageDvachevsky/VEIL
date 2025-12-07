@@ -1,5 +1,7 @@
 #include "transport/session/transport_session.h"
 
+#include <sodium.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -26,6 +28,15 @@ TransportSession::TransportSession(const handshake::HandshakeSession& handshake_
       fragment_reassembly_(config_.fragment_buffer_size),
       retransmit_buffer_(config_.retransmit_config, now_fn_) {
   LOG_DEBUG("TransportSession created with session_id={}", current_session_id_);
+}
+
+TransportSession::~TransportSession() {
+  // SECURITY: Clear all session key material on destruction
+  sodium_memzero(keys_.send_key.data(), keys_.send_key.size());
+  sodium_memzero(keys_.recv_key.data(), keys_.recv_key.size());
+  sodium_memzero(keys_.send_nonce.data(), keys_.send_nonce.size());
+  sodium_memzero(keys_.recv_nonce.data(), keys_.recv_nonce.size());
+  LOG_DEBUG("TransportSession destroyed, keys cleared");
 }
 
 std::vector<std::vector<std::uint8_t>> TransportSession::encrypt_data(
