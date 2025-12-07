@@ -125,6 +125,8 @@ TEST(RetransmitBufferTests, BufferLimitEnforced) {
 
   mux::RetransmitConfig config;
   config.max_buffer_bytes = 10;
+  // Use kNewest policy so new inserts are rejected when buffer is full.
+  config.drop_policy = mux::DropPolicy::kNewest;
   mux::RetransmitBuffer buffer(config, now_fn);
 
   EXPECT_TRUE(buffer.insert(1, {1, 2, 3, 4}));  // 4 bytes

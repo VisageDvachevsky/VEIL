@@ -10,6 +10,7 @@ add_executable(veil_unit_tests
   udp_socket_tests.cpp
   mux_codec_tests.cpp
   retransmit_buffer_tests.cpp
+  ack_scheduler_tests.cpp
   transport_session_tests.cpp
   timer_heap_tests.cpp
   obfuscation_tests.cpp
