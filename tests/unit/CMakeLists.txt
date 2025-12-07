@@ -8,6 +8,9 @@ add_executable(veil_unit_tests
   reorder_buffer_tests.cpp
   fragment_reassembly_tests.cpp
   udp_socket_tests.cpp
+  mux_codec_tests.cpp
+  retransmit_buffer_tests.cpp
+  transport_session_tests.cpp
 )
 
 target_link_libraries(veil_unit_tests PRIVATE

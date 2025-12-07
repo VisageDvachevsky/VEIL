@@ -26,7 +26,10 @@ endif()
 if(VEIL_ENABLE_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy)
   if(CLANG_TIDY_EXE)
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+    # Store the clang-tidy executable path but don't set CMAKE_CXX_CLANG_TIDY
+    # globally, as that would apply to external dependencies too.
+    # Instead, we'll apply it per-target using veil_set_warnings().
+    set(VEIL_CLANG_TIDY_COMMAND "${CLANG_TIDY_EXE}" CACHE STRING "")
   else()
     message(WARNING "clang-tidy requested but not found")
   endif()

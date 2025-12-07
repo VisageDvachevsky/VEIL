@@ -12,6 +12,9 @@ add_library(veil_common STATIC
   transport/mux/ack_bitmap.cpp
   transport/mux/reorder_buffer.cpp
   transport/mux/fragment_reassembly.cpp
+  transport/mux/mux_codec.cpp
+  transport/mux/retransmit_buffer.cpp
+  transport/session/transport_session.cpp
 )
 
 target_include_directories(veil_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

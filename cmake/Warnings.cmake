@@ -20,4 +20,11 @@ function(veil_set_warnings target)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
   endif()
+
+  # Apply clang-tidy only to project targets (not dependencies).
+  if(VEIL_CLANG_TIDY_COMMAND)
+    set_target_properties(${target} PROPERTIES
+      CXX_CLANG_TIDY "${VEIL_CLANG_TIDY_COMMAND}"
+    )
+  endif()
 endfunction()
