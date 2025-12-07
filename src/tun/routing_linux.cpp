@@ -1,3 +1,5 @@
+#ifndef _WIN32  // Linux/Unix-specific implementation
+
 #include "tun/routing.h"
 
 #include <array>
@@ -342,3 +344,5 @@ void RouteManager::cleanup() {
 }
 
 }  // namespace veil::tun
+
+#endif  // \!_WIN32

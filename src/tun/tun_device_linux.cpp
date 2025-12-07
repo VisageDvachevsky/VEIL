@@ -1,5 +1,7 @@
 #include "tun/tun_device.h"
 
+#ifndef _WIN32  // Linux/Unix-specific implementation
+
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
@@ -380,3 +382,5 @@ bool TunDevice::poll(const ReadHandler& handler, int timeout_ms, std::error_code
 }
 
 }  // namespace veil::tun
+
+#endif  // !_WIN32

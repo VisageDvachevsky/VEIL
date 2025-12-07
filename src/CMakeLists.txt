@@ -1,3 +1,16 @@
+# Platform-specific source files
+if(WIN32)
+  set(VEIL_TUN_IMPL tun/tun_device_windows.cpp)
+  set(VEIL_ROUTING_IMPL tun/routing_windows.cpp)
+  # TODO: Add when implemented
+  # set(VEIL_IPC_IMPL common/ipc/ipc_socket_windows.cpp)
+  set(VEIL_IPC_IMPL common/ipc/ipc_socket.cpp)
+else()
+  set(VEIL_TUN_IMPL tun/tun_device_linux.cpp)
+  set(VEIL_ROUTING_IMPL tun/routing_linux.cpp)
+  set(VEIL_IPC_IMPL common/ipc/ipc_socket.cpp)
+endif()
+
 add_library(veil_common STATIC
   common/crypto/random.cpp
   common/crypto/crypto_engine.cpp
@@ -20,7 +33,7 @@ add_library(veil_common STATIC
   common/signal/signal_handler.cpp
   common/daemon/daemon.cpp
   common/ipc/ipc_protocol.cpp
-  common/ipc/ipc_socket.cpp
+  ${VEIL_IPC_IMPL}
   transport/udp_socket/udp_socket.cpp
   transport/mux/ack_bitmap.cpp
   transport/mux/reorder_buffer.cpp
@@ -31,8 +44,8 @@ add_library(veil_common STATIC
   transport/session/transport_session.cpp
   transport/event_loop/event_loop.cpp
   transport/stats/transport_stats.cpp
-  tun/tun_device.cpp
-  tun/routing.cpp
+  ${VEIL_TUN_IMPL}
+  ${VEIL_ROUTING_IMPL}
   tun/mtu_discovery.cpp
   tunnel/tunnel.cpp
   tunnel/session_migration.cpp
