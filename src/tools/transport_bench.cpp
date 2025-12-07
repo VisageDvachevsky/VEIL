@@ -74,19 +74,19 @@ struct BenchResults {
   }
 
   void print() const {
-    std::cout << "\n=== VEIL Transport Benchmark Results ===" << std::endl;
+    std::cout << "\n=== VEIL Transport Benchmark Results ===\n";
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Duration:         " << duration_sec << " sec" << std::endl;
-    std::cout << "Bytes sent:       " << (static_cast<double>(bytes_sent) / 1000000.0) << " MB" << std::endl;
-    std::cout << "Bytes received:   " << (static_cast<double>(bytes_received) / 1000000.0) << " MB" << std::endl;
-    std::cout << "Packets sent:     " << packets_sent << std::endl;
-    std::cout << "Packets received: " << packets_received << std::endl;
-    std::cout << "Retransmits:      " << retransmits << std::endl;
-    std::cout << "Throughput:       " << throughput_mbps() << " Mbps" << std::endl;
-    std::cout << "Retransmit rate:  " << retransmit_rate() << " %" << std::endl;
-    std::cout << "Avg RTT:          " << avg_rtt_ms << " ms" << std::endl;
-    std::cout << "P95 RTT:          " << p95_rtt_ms << " ms" << std::endl;
-    std::cout << "========================================" << std::endl;
+    std::cout << "Duration:         " << duration_sec << " sec\n";
+    std::cout << "Bytes sent:       " << (static_cast<double>(bytes_sent) / 1000000.0) << " MB\n";
+    std::cout << "Bytes received:   " << (static_cast<double>(bytes_received) / 1000000.0) << " MB\n";
+    std::cout << "Packets sent:     " << packets_sent << '\n';
+    std::cout << "Packets received: " << packets_received << '\n';
+    std::cout << "Retransmits:      " << retransmits << '\n';
+    std::cout << "Throughput:       " << throughput_mbps() << " Mbps\n";
+    std::cout << "Retransmit rate:  " << retransmit_rate() << " %\n";
+    std::cout << "Avg RTT:          " << avg_rtt_ms << " ms\n";
+    std::cout << "P95 RTT:          " << p95_rtt_ms << " ms\n";
+    std::cout << "========================================\n";
   }
 };
 
@@ -97,13 +97,13 @@ std::vector<std::uint8_t> get_bench_psk() {
 
 // Run server mode.
 int run_server(const BenchConfig& config) {
-  std::cout << "Starting VEIL transport benchmark server on port " << config.port << std::endl;
+  std::cout << "Starting VEIL transport benchmark server on port " << config.port << '\n';
 
   // Create UDP socket.
   transport::UdpSocket socket;
   std::error_code ec;
   if (!socket.open(config.port, true, ec)) {
-    std::cerr << "Failed to open socket: " << ec.message() << std::endl;
+    std::cerr << "Failed to open socket: " << ec.message() << '\n';
     return 1;
   }
 
@@ -119,7 +119,7 @@ int run_server(const BenchConfig& config) {
 
   auto start_time = std::chrono::steady_clock::now();
 
-  std::cout << "Waiting for client connection..." << std::endl;
+  std::cout << "Waiting for client connection...\n";
 
   while (g_running.load()) {
     socket.poll(
@@ -129,7 +129,7 @@ int run_server(const BenchConfig& config) {
             auto resp = responder.handle_init(pkt.data);
             if (resp) {
               std::cout << "Handshake completed with client: " << pkt.remote.host << ":"
-                        << pkt.remote.port << std::endl;
+                        << pkt.remote.port << '\n';
               socket.send(resp->response, pkt.remote, ec);
               session.emplace(resp->session, transport::TransportSessionConfig{}, steady_fn);
               client_endpoint = pkt.remote;
@@ -185,16 +185,16 @@ int run_server(const BenchConfig& config) {
 
 // Run client mode.
 int run_client(const BenchConfig& config) {
-  std::cout << "Starting VEIL transport benchmark client" << std::endl;
-  std::cout << "Target: " << config.host << ":" << config.port << std::endl;
-  std::cout << "Duration: " << config.duration_sec << " seconds" << std::endl;
-  std::cout << "Message size: " << config.message_size << " bytes" << std::endl;
+  std::cout << "Starting VEIL transport benchmark client\n";
+  std::cout << "Target: " << config.host << ":" << config.port << '\n';
+  std::cout << "Duration: " << config.duration_sec << " seconds\n";
+  std::cout << "Message size: " << config.message_size << " bytes\n";
 
   // Create UDP socket.
   transport::UdpSocket socket;
   std::error_code ec;
   if (!socket.open(0, false, ec)) {
-    std::cerr << "Failed to open socket: " << ec.message() << std::endl;
+    std::cerr << "Failed to open socket: " << ec.message() << '\n';
     return 1;
   }
 
@@ -207,11 +207,11 @@ int run_client(const BenchConfig& config) {
 
   auto init_bytes = initiator.create_init();
   if (!socket.send(init_bytes, server, ec)) {
-    std::cerr << "Failed to send handshake: " << ec.message() << std::endl;
+    std::cerr << "Failed to send handshake: " << ec.message() << '\n';
     return 1;
   }
 
-  std::cout << "Waiting for handshake response..." << std::endl;
+  std::cout << "Waiting for handshake response...\n";
 
   std::optional<transport::TransportSession> session;
 
@@ -222,14 +222,14 @@ int run_client(const BenchConfig& config) {
           auto sess = initiator.consume_response(pkt.data);
           if (sess) {
             session.emplace(*sess, transport::TransportSessionConfig{}, steady_fn);
-            std::cout << "Handshake completed!" << std::endl;
+            std::cout << "Handshake completed!\n";
           }
         },
         100, ec);
   }
 
   if (!session) {
-    std::cerr << "Handshake failed" << std::endl;
+    std::cerr << "Handshake failed\n";
     return 1;
   }
 
@@ -243,7 +243,7 @@ int run_client(const BenchConfig& config) {
   auto start_time = std::chrono::steady_clock::now();
   auto end_time = start_time + std::chrono::seconds(config.duration_sec);
 
-  std::cout << "Starting benchmark..." << std::endl;
+  std::cout << "Starting benchmark...\n";
 
   // RTT measurements.
   std::vector<double> rtt_samples;
@@ -256,7 +256,7 @@ int run_client(const BenchConfig& config) {
     for (const auto& pkt : packets) {
       if (!socket.send(pkt, server, ec)) {
         if (config.verbose) {
-          std::cerr << "Send failed: " << ec.message() << std::endl;
+          std::cerr << "Send failed: " << ec.message() << '\n';
         }
       } else {
         results.bytes_sent += pkt.size();
@@ -330,32 +330,36 @@ int run_client(const BenchConfig& config) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  CLI::App app{"VEIL Transport Layer Benchmark Tool"};
+  try {
+    CLI::App app{"VEIL Transport Layer Benchmark Tool"};
 
-  BenchConfig config;
+    BenchConfig config;
 
-  app.add_option("--mode,-m", config.mode, "Mode: server or client")
-      ->check(CLI::IsMember({"server", "client"}));
-  app.add_option("--host,-H", config.host, "Server host (client mode)");
-  app.add_option("--port,-p", config.port, "Port number");
-  app.add_option("--duration,-d", config.duration_sec, "Test duration in seconds (client mode)");
-  app.add_option("--size,-s", config.message_size, "Message size in bytes");
-  app.add_option("--streams,-n", config.num_streams, "Number of streams");
-  app.add_flag("--verbose,-v", config.verbose, "Verbose output");
+    app.add_option("--mode,-m", config.mode, "Mode: server or client")
+        ->check(CLI::IsMember({"server", "client"}));
+    app.add_option("--host,-H", config.host, "Server host (client mode)");
+    app.add_option("--port,-p", config.port, "Port number");
+    app.add_option("--duration,-d", config.duration_sec, "Test duration in seconds (client mode)");
+    app.add_option("--size,-s", config.message_size, "Message size in bytes");
+    app.add_option("--streams,-n", config.num_streams, "Number of streams");
+    app.add_flag("--verbose,-v", config.verbose, "Verbose output");
 
-  CLI11_PARSE(app, argc, argv);
+    CLI11_PARSE(app, argc, argv);
 
-  // Setup signal handler.
-  std::signal(SIGINT, signal_handler);
-  std::signal(SIGTERM, signal_handler);
+    // Setup signal handler.
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
 
-  // Initialize logging.
-  logging::configure_logging(
-      config.verbose ? logging::LogLevel::debug : logging::LogLevel::info, true);
+    // Initialize logging.
+    logging::configure_logging(
+        config.verbose ? logging::LogLevel::debug : logging::LogLevel::info, true);
 
-  if (config.mode == "server") {
-    return run_server(config);
-  } else {
+    if (config.mode == "server") {
+      return run_server(config);
+    }
     return run_client(config);
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << '\n';
+    return 1;
   }
 }
