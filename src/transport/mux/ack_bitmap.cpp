@@ -44,7 +44,7 @@ bool AckBitmap::is_acked(std::uint64_t seq) const {
   const auto diff = head_ - seq;
   if (diff == 0) return true;
   if (diff > 32) return false;
-  return (bitmap_ >> (diff - 1)) & 1U;
+  return ((bitmap_ >> (diff - 1)) & 1U) != 0U;
 }
 
 }  // namespace veil::mux

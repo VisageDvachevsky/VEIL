@@ -1,7 +1,7 @@
 #include "transport/udp_socket/udp_socket.h"
 
 #include <arpa/inet.h>
-#include <errno.h>
+#include <cerrno>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
@@ -39,9 +39,9 @@ bool resolve(const veil::transport::UdpEndpoint& endpoint, sockaddr_in& addr) {
 }
 
 void fill_endpoint(const sockaddr_in& addr, veil::transport::UdpEndpoint& endpoint) {
-  char buffer[INET_ADDRSTRLEN];
-  const char* res = inet_ntop(AF_INET, &addr.sin_addr, buffer, sizeof(buffer));
-  endpoint.host = res ? buffer : "";
+  std::array<char, INET_ADDRSTRLEN> buffer{};
+  const char* res = inet_ntop(AF_INET, &addr.sin_addr, buffer.data(), buffer.size());
+  endpoint.host = (res != nullptr) ? buffer.data() : "";
   endpoint.port = ntohs(addr.sin_port);
 }
 }  // namespace
@@ -174,7 +174,7 @@ fallback:
   return true;
 }
 
-bool UdpSocket::poll(ReceiveHandler handler, int timeout_ms, std::error_code& ec) {
+bool UdpSocket::poll(const ReceiveHandler& handler, int timeout_ms, std::error_code& ec) {
   int ep = epoll_create1(0);
   if (ep < 0) {
     ec = last_error();
@@ -189,8 +189,8 @@ bool UdpSocket::poll(ReceiveHandler handler, int timeout_ms, std::error_code& ec
     return false;
   }
 
-  epoll_event events[4];
-  const int n = epoll_wait(ep, events, 4, timeout_ms);
+  std::array<epoll_event, 4> events{};
+  const int n = epoll_wait(ep, events.data(), static_cast<int>(events.size()), timeout_ms);
   if (n < 0) {
     ec = last_error();
     ::close(ep);
@@ -204,7 +204,7 @@ bool UdpSocket::poll(ReceiveHandler handler, int timeout_ms, std::error_code& ec
 
   std::array<std::uint8_t, 65535> buffer{};
   for (int i = 0; i < n; ++i) {
-    if (!(events[i].events & EPOLLIN)) {
+    if ((events[static_cast<std::size_t>(i)].events & EPOLLIN) == 0U) {
       continue;
     }
     sockaddr_in src{};

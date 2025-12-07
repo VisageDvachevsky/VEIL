@@ -11,7 +11,7 @@
 namespace veil::mux {
 
 RetransmitBuffer::RetransmitBuffer(RetransmitConfig config, std::function<TimePoint()> now_fn)
-    : config_(std::move(config)),
+    : config_(config),
       now_fn_(std::move(now_fn)),
       estimated_rtt_(config_.initial_rtt),
       current_rto_(config_.initial_rtt) {}

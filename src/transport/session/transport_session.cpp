@@ -16,7 +16,7 @@ namespace veil::transport {
 
 TransportSession::TransportSession(const handshake::HandshakeSession& handshake_session,
                                    TransportSessionConfig config, std::function<TimePoint()> now_fn)
-    : config_(std::move(config)),
+    : config_(config),
       now_fn_(std::move(now_fn)),
       keys_(handshake_session.keys),
       current_session_id_(handshake_session.session_id),
@@ -136,7 +136,7 @@ void TransportSession::process_ack(const mux::AckFrame& ack) {
 
   // Selective ACK from bitmap.
   for (std::uint32_t i = 0; i < 32; ++i) {
-    if ((ack.bitmap >> i) & 1U) {
+    if (((ack.bitmap >> i) & 1U) != 0U) {
       std::uint64_t seq = ack.ack - 1 - i;
       if (seq > 0) {
         retransmit_buffer_.acknowledge(seq);
