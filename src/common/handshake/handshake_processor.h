@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/crypto/crypto_engine.h"
+#include "common/handshake/handshake_replay_cache.h"
 #include "common/utils/rate_limiter.h"
 
 namespace veil::handshake {
@@ -59,6 +60,7 @@ class HandshakeResponder {
   std::vector<std::uint8_t> psk_;
   std::chrono::milliseconds skew_tolerance_;
   utils::TokenBucket rate_limiter_;
+  HandshakeReplayCache replay_cache_;
   std::function<Clock::time_point()> now_fn_;
 };
 
