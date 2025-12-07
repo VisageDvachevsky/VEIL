@@ -6,6 +6,11 @@
 #include <variant>
 #include <vector>
 
+// Forward declaration for DPI bypass mode
+namespace veil::obfuscation {
+enum class DPIBypassMode : std::uint8_t;
+}
+
 namespace veil::ipc {
 
 // ============================================================================
@@ -63,6 +68,7 @@ struct ConnectionConfig {
   std::uint32_t max_reconnect_attempts{0};  // 0 = unlimited
   bool route_all_traffic{true};
   std::vector<std::string> custom_routes;
+  std::uint8_t dpi_bypass_mode{0};  // DPI bypass mode (0=IoT, 1=QUIC, 2=Noise, 3=Trickle)
 };
 
 // Current connection status
@@ -112,6 +118,7 @@ struct ObfuscationProfile {
   double timing_jitter_param{0.0};
   std::string heartbeat_mode;
   double last_heartbeat_sec{0.0};
+  std::string active_dpi_mode;  // Active DPI bypass mode name
 };
 
 // Log event for diagnostics screen
