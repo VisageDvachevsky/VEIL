@@ -19,6 +19,11 @@ add_executable(veil_unit_tests
   signal_handler_tests.cpp
   daemon_tests.cpp
   session_table_tests.cpp
+  advanced_rate_limiter_tests.cpp
+  session_lifecycle_tests.cpp
+  constrained_logging_tests.cpp
+  metrics_tests.cpp
+  session_migration_tests.cpp
 )
 
 target_link_libraries(veil_unit_tests PRIVATE

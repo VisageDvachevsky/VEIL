@@ -50,8 +50,20 @@ max_clients = 256
 # Session timeout (seconds of inactivity before disconnect)
 session_timeout = 300
 
+# Idle warning before timeout (sends notification to client)
+idle_warning_sec = 270
+
+# Absolute session timeout (maximum lifetime regardless of activity)
+absolute_timeout_sec = 86400
+
+# Maximum memory per session (bytes)
+max_memory_per_session_mb = 10
+
 # Session cleanup interval (seconds)
 cleanup_interval = 60
+
+# Drain timeout for graceful shutdown (seconds)
+drain_timeout_sec = 5
 
 [ip_pool]
 # IP address pool for clients
@@ -69,3 +81,64 @@ pid_file = /var/run/veil-server.pid
 # (Note: Must open TUN and configure NAT before dropping privileges)
 # user = nobody
 # group = nogroup
+
+[rate_limiting]
+# Per-client bandwidth limit (megabits per second)
+per_client_bandwidth_mbps = 100
+
+# Per-client packets per second limit
+per_client_pps = 10000
+
+# Burst allowance factor (1.0 = no burst, 1.5 = allow 50% burst)
+burst_allowance_factor = 1.5
+
+# Maximum reconnections per minute before anti-abuse triggers
+reconnect_limit_per_minute = 5
+
+# Enable traffic priority (critical/high/normal/low)
+enable_traffic_shaping = true
+
+[degradation]
+# CPU usage threshold for moderate degradation (percent)
+cpu_threshold_percent = 80
+
+# Memory usage threshold for degradation (percent)
+memory_threshold_percent = 85
+
+# Enable automatic graceful degradation under load
+enable_graceful_degradation = true
+
+# Escalation delay before increasing degradation level (seconds)
+escalation_delay_sec = 5
+
+# Recovery delay before decreasing degradation level (seconds)
+recovery_delay_sec = 10
+
+[logging]
+# Log level: trace, debug, info, warn, error, critical
+level = info
+
+# Maximum log entries per second (0 = unlimited)
+rate_limit_logs_per_sec = 100
+
+# Sampling rate for routine events (0.0 to 1.0, 1.0 = log all)
+sampling_rate = 0.01
+
+# Enable async logging (recommended for production)
+async_logging = true
+
+# Enable structured JSON logging
+format = json
+
+[migration]
+# Enable session migration (allows clients to change IP without reconnect)
+enable_session_migration = true
+
+# Migration token time-to-live (seconds)
+migration_token_ttl_sec = 300
+
+# Maximum migrations per session
+max_migrations_per_session = 5
+
+# Minimum time between migrations (seconds)
+migration_cooldown_sec = 10
