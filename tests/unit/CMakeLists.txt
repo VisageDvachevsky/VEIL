@@ -11,6 +11,8 @@ add_executable(veil_unit_tests
   mux_codec_tests.cpp
   retransmit_buffer_tests.cpp
   transport_session_tests.cpp
+  timer_heap_tests.cpp
+  obfuscation_tests.cpp
 )
 
 target_link_libraries(veil_unit_tests PRIVATE
