@@ -9,6 +9,7 @@ A secure UDP-based transport protocol with cryptographic handshakes and encrypte
 - CMake 3.20+
 - C++20 compatible compiler (GCC 11+ or Clang 14+)
 - libsodium
+- Qt6 (optional, for GUI applications)
 
 ### Build Commands
 
@@ -72,6 +73,7 @@ src/
 │   ├── config/         # Configuration parsing
 │   ├── crypto/         # Cryptographic primitives (AEAD, HKDF)
 │   ├── handshake/      # Handshake protocol implementation
+│   ├── ipc/            # IPC protocol for GUI/daemon communication
 │   ├── logging/        # Logging utilities
 │   ├── packet/         # Packet builder and parser
 │   └── utils/          # Utilities (random, rate limiting)
@@ -79,6 +81,10 @@ src/
 │   ├── mux/            # Multiplexing codec and retransmission
 │   ├── session/        # Transport session management
 │   └── udp_socket/     # UDP socket wrapper
+├── client/             # CLI client application
+├── server/             # CLI server application
+├── gui-client/         # Qt-based GUI client (optional)
+└── gui-server/         # Qt-based GUI server (optional)
 tests/
 ├── unit/               # Unit tests
 └── integration/        # Integration tests

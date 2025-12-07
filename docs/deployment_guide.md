@@ -40,6 +40,9 @@ sudo apt-get install -y \
   pkg-config \
   git
 
+# For GUI support (optional):
+sudo apt-get install -y qt6-base-dev
+
 # CentOS/RHEL
 sudo yum install -y \
   gcc-c++ \
@@ -47,7 +50,12 @@ sudo yum install -y \
   libsodium-devel \
   pkgconfig \
   git
+
+# For GUI support (optional):
+sudo yum install -y qt6-qtbase-devel
 ```
+
+**Note:** The GUI applications (`veil-gui-client` and `veil-gui-server`) are optional. If Qt6 is not installed, only the command-line versions (`veil-client` and `veil-server`) will be built. The CLI versions provide the same functionality through command-line arguments and configuration files.
 
 ---
 
