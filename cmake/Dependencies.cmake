@@ -36,6 +36,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(CLI11)
 
+# nlohmann/json for IPC message serialization
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set(JSON_Install OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  nlohmann_json
+  URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 set(VEIL_SODIUM_VERSION 1.0.19)
 
 function(veil_try_system_sodium out_found)

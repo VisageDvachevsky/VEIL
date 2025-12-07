@@ -19,6 +19,8 @@ add_library(veil_common STATIC
   common/obfuscation/obfuscation_profile.cpp
   common/signal/signal_handler.cpp
   common/daemon/daemon.cpp
+  common/ipc/ipc_protocol.cpp
+  common/ipc/ipc_socket.cpp
   transport/udp_socket/udp_socket.cpp
   transport/mux/ack_bitmap.cpp
   transport/mux/reorder_buffer.cpp
@@ -44,6 +46,7 @@ target_link_libraries(veil_common
     spdlog::spdlog
     fmt::fmt
     CLI11::CLI11
+    nlohmann_json::nlohmann_json
 )
 
 veil_set_warnings(veil_common)
@@ -69,3 +72,11 @@ add_executable(veil-server
 
 target_link_libraries(veil-server PRIVATE veil_common)
 veil_set_warnings(veil-server)
+
+# GUI applications (optional, require Qt6)
+option(VEIL_BUILD_GUI "Build Qt GUI applications" ON)
+
+if(VEIL_BUILD_GUI)
+  add_subdirectory(gui-client)
+  add_subdirectory(gui-server)
+endif()
