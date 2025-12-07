@@ -569,4 +569,204 @@ void reset_metrics(ObfuscationMetrics& metrics) {
   metrics = ObfuscationMetrics{};
 }
 
+// ============================================================================
+// DPI Bypass Mode Factory Functions
+// ============================================================================
+
+ObfuscationProfile create_dpi_mode_profile(DPIBypassMode mode) {
+  using namespace std::chrono_literals;
+
+  switch (mode) {
+    case DPIBypassMode::kIoTMimic: {
+      // Mode A: IoT Mimic - Simulate IoT sensor telemetry
+      ObfuscationProfile profile;
+      profile.enabled = true;
+      profile.max_padding_size = 200;
+      profile.min_padding_size = 20;
+      profile.min_prefix_size = 4;
+      profile.max_prefix_size = 8;
+      profile.heartbeat_min = 10s;
+      profile.heartbeat_max = 20s;
+      profile.timing_jitter_enabled = true;
+      profile.max_timing_jitter_ms = 30;
+      profile.size_variance = 0.3f;
+      profile.padding_distribution = {
+          .small_weight = 70,  // Predominantly small packets
+          .medium_weight = 25,
+          .large_weight = 5,
+          .small_min = 20,
+          .small_max = 150,
+          .medium_min = 150,
+          .medium_max = 300,
+          .large_min = 300,
+          .large_max = 500,
+          .jitter_range = 15,
+      };
+      profile.use_advanced_padding = true;
+      profile.timing_jitter_model = TimingJitterModel::kPoisson;
+      profile.timing_jitter_scale = 0.8f;
+      profile.heartbeat_type = HeartbeatType::kIoTSensor;
+      profile.heartbeat_entropy_normalization = true;
+      return profile;
+    }
+
+    case DPIBypassMode::kQUICLike: {
+      // Mode B: QUIC-Like - Mimic QUIC/HTTP3 traffic
+      ObfuscationProfile profile;
+      profile.enabled = true;
+      profile.max_padding_size = 1200;
+      profile.min_padding_size = 100;
+      profile.min_prefix_size = 8;
+      profile.max_prefix_size = 16;
+      profile.heartbeat_min = 30s;
+      profile.heartbeat_max = 60s;
+      profile.timing_jitter_enabled = true;
+      profile.max_timing_jitter_ms = 100;
+      profile.size_variance = 0.7f;
+      profile.padding_distribution = {
+          .small_weight = 20,
+          .medium_weight = 30,
+          .large_weight = 50,  // Predominantly large packets
+          .small_min = 100,
+          .small_max = 300,
+          .medium_min = 300,
+          .medium_max = 800,
+          .large_min = 800,
+          .large_max = 1200,
+          .jitter_range = 50,
+      };
+      profile.use_advanced_padding = true;
+      profile.timing_jitter_model = TimingJitterModel::kExponential;  // Bursty timing
+      profile.timing_jitter_scale = 1.5f;
+      profile.heartbeat_type = HeartbeatType::kGenericTelemetry;
+      profile.heartbeat_entropy_normalization = true;
+      return profile;
+    }
+
+    case DPIBypassMode::kRandomNoise: {
+      // Mode C: Random-Noise Stealth - Maximum unpredictability
+      ObfuscationProfile profile;
+      profile.enabled = true;
+      profile.max_padding_size = 1000;
+      profile.min_padding_size = 0;
+      profile.min_prefix_size = 4;
+      profile.max_prefix_size = 20;
+      profile.heartbeat_min = 60s;  // Infrequent heartbeats
+      profile.heartbeat_max = 180s;
+      profile.timing_jitter_enabled = true;
+      profile.max_timing_jitter_ms = 500;  // Extreme jitter
+      profile.size_variance = 1.0f;        // Maximum variance
+      profile.padding_distribution = {
+          .small_weight = 33,  // Equal distribution
+          .medium_weight = 33,
+          .large_weight = 34,
+          .small_min = 0,
+          .small_max = 333,
+          .medium_min = 333,
+          .medium_max = 666,
+          .large_min = 666,
+          .large_max = 1000,
+          .jitter_range = 100,
+      };
+      profile.use_advanced_padding = true;
+      profile.timing_jitter_model = TimingJitterModel::kUniform;  // Random timing
+      profile.timing_jitter_scale = 2.0f;                         // Maximum jitter scale
+      profile.heartbeat_type = HeartbeatType::kEmpty;             // Minimal heartbeats
+      profile.heartbeat_entropy_normalization = true;
+      return profile;
+    }
+
+    case DPIBypassMode::kTrickle: {
+      // Mode D: Trickle Mode - Low-and-slow traffic
+      ObfuscationProfile profile;
+      profile.enabled = true;
+      profile.max_padding_size = 100;
+      profile.min_padding_size = 10;
+      profile.min_prefix_size = 4;
+      profile.max_prefix_size = 6;
+      profile.heartbeat_min = 120s;  // Very infrequent heartbeats
+      profile.heartbeat_max = 300s;
+      profile.timing_jitter_enabled = true;
+      profile.max_timing_jitter_ms = 500;  // High jitter for stealth
+      profile.size_variance = 0.2f;        // Low variance (consistent small packets)
+      profile.padding_distribution = {
+          .small_weight = 100,  // Only small packets
+          .medium_weight = 0,
+          .large_weight = 0,
+          .small_min = 10,
+          .small_max = 100,
+          .medium_min = 0,
+          .medium_max = 0,
+          .large_min = 0,
+          .large_max = 0,
+          .jitter_range = 10,
+      };
+      profile.use_advanced_padding = true;
+      profile.timing_jitter_model = TimingJitterModel::kPoisson;
+      profile.timing_jitter_scale = 1.2f;
+      profile.heartbeat_type = HeartbeatType::kTimestamp;  // Minimal heartbeat data
+      profile.heartbeat_entropy_normalization = false;     // Low entropy for IoT-like traffic
+      return profile;
+    }
+
+    case DPIBypassMode::kCustom:
+    default:
+      // Return default profile
+      return ObfuscationProfile{};
+  }
+}
+
+const char* dpi_mode_to_string(DPIBypassMode mode) {
+  switch (mode) {
+    case DPIBypassMode::kIoTMimic:
+      return "IoT Mimic";
+    case DPIBypassMode::kQUICLike:
+      return "QUIC-Like";
+    case DPIBypassMode::kRandomNoise:
+      return "Random-Noise Stealth";
+    case DPIBypassMode::kTrickle:
+      return "Trickle Mode";
+    case DPIBypassMode::kCustom:
+      return "Custom";
+    default:
+      return "Unknown";
+  }
+}
+
+std::optional<DPIBypassMode> dpi_mode_from_string(const std::string& str) {
+  if (str == "IoT Mimic" || str == "iot_mimic" || str == "0") {
+    return DPIBypassMode::kIoTMimic;
+  }
+  if (str == "QUIC-Like" || str == "quic_like" || str == "1") {
+    return DPIBypassMode::kQUICLike;
+  }
+  if (str == "Random-Noise Stealth" || str == "random_noise" || str == "2") {
+    return DPIBypassMode::kRandomNoise;
+  }
+  if (str == "Trickle Mode" || str == "trickle" || str == "3") {
+    return DPIBypassMode::kTrickle;
+  }
+  if (str == "Custom" || str == "custom" || str == "255") {
+    return DPIBypassMode::kCustom;
+  }
+  return std::nullopt;
+}
+
+const char* dpi_mode_description(DPIBypassMode mode) {
+  switch (mode) {
+    case DPIBypassMode::kIoTMimic:
+      return "Simulates IoT sensor traffic. Good balance of stealth and performance.";
+    case DPIBypassMode::kQUICLike:
+      return "Mimics modern HTTP/3 traffic. Best for high-throughput scenarios.";
+    case DPIBypassMode::kRandomNoise:
+      return "Maximum unpredictability. Use in extreme censorship scenarios.";
+    case DPIBypassMode::kTrickle:
+      return "Low-and-slow traffic. Maximum stealth but limited bandwidth (10-50 kbit/s).";
+    case DPIBypassMode::kCustom:
+      return "User-defined custom profile.";
+    default:
+      return "Unknown mode.";
+  }
+}
+
 }  // namespace veil::obfuscation

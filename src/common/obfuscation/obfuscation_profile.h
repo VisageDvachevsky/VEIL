@@ -52,6 +52,16 @@ enum class HeartbeatType : std::uint8_t {
   kGenericTelemetry = 3 // Generic telemetry pattern
 };
 
+// DPI bypass mode presets for Windows GUI.
+// Each mode represents a different traffic pattern for evading DPI systems.
+enum class DPIBypassMode : std::uint8_t {
+  kIoTMimic = 0,     // Simulates IoT sensor telemetry (balanced stealth/performance)
+  kQUICLike = 1,     // Mimics QUIC/HTTP3 traffic (high throughput)
+  kRandomNoise = 2,  // Maximum entropy and unpredictability (extreme stealth)
+  kTrickle = 3,      // Low-and-slow traffic (maximum stealth, limited bandwidth)
+  kCustom = 255      // User-defined profile
+};
+
 // IoT-like sensor data template for heartbeat payloads.
 struct IoTSensorTemplate {
   float temp_min{18.0f};
@@ -243,5 +253,22 @@ void update_metrics(ObfuscationMetrics& metrics, std::uint16_t packet_size,
 
 // Reset obfuscation metrics.
 void reset_metrics(ObfuscationMetrics& metrics);
+
+// ============================================================================
+// DPI Bypass Mode Factory Functions
+// ============================================================================
+
+// Create an obfuscation profile for a specific DPI bypass mode.
+// Each mode has predefined parameters optimized for different evasion scenarios.
+ObfuscationProfile create_dpi_mode_profile(DPIBypassMode mode);
+
+// Get human-readable name for a DPI bypass mode.
+const char* dpi_mode_to_string(DPIBypassMode mode);
+
+// Parse DPI bypass mode from string.
+std::optional<DPIBypassMode> dpi_mode_from_string(const std::string& str);
+
+// Get description of a DPI bypass mode.
+const char* dpi_mode_description(DPIBypassMode mode);
 
 }  // namespace veil::obfuscation

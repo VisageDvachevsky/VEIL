@@ -1,7 +1,9 @@
 #include "settings_widget.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QGroupBox>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
@@ -54,6 +56,41 @@ void SettingsWidget::setupUi() {
   auto* connLayout = new QVBoxLayout(connGroup);
   connLayout->addWidget(new QCheckBox("Auto-reconnect on disconnect"));
   layout->addWidget(connGroup);
+
+  // DPI Bypass Mode
+  auto* dpiGroup = new QGroupBox("DPI Bypass Mode", this);
+  auto* dpiLayout = new QVBoxLayout(dpiGroup);
+
+  dpiLayout->addWidget(new QLabel("Select traffic obfuscation mode:"));
+
+  auto* dpiModeCombo = new QComboBox(dpiGroup);
+  dpiModeCombo->addItem("IoT Mimic");
+  dpiModeCombo->addItem("QUIC-Like");
+  dpiModeCombo->addItem("Random-Noise Stealth");
+  dpiModeCombo->addItem("Trickle Mode");
+  dpiModeCombo->setCurrentIndex(0);
+  dpiLayout->addWidget(dpiModeCombo);
+
+  auto* dpiDescLabel = new QLabel(this);
+  dpiDescLabel->setWordWrap(true);
+  dpiDescLabel->setStyleSheet("color: #88c0d0; font-size: 11px; padding: 8px;");
+  dpiDescLabel->setText("Simulates IoT sensor traffic. Good balance of stealth and performance.");
+  dpiLayout->addWidget(dpiDescLabel);
+
+  // Update description when mode changes
+  connect(dpiModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [dpiDescLabel](int index) {
+            const char* descriptions[] = {
+                "Simulates IoT sensor traffic. Good balance of stealth and performance.",
+                "Mimics modern HTTP/3 traffic. Best for high-throughput scenarios.",
+                "Maximum unpredictability. Use in extreme censorship scenarios.",
+                "Low-and-slow traffic. Maximum stealth but limited bandwidth (10-50 kbit/s)."};
+            if (index >= 0 && index < 4) {
+              dpiDescLabel->setText(descriptions[index]);
+            }
+          });
+
+  layout->addWidget(dpiGroup);
 
   // Advanced
   auto* advGroup = new QGroupBox("Advanced", this);
