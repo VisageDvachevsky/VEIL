@@ -84,13 +84,13 @@ TEST_F(HandshakeReplayCacheTest, EvictsLRUWhenAtCapacity) {
   EXPECT_FALSE(cache.mark_and_check(4000, key4));
   EXPECT_EQ(cache.size(), 3);
 
-  // key1 should have been evicted - will not detect as replay
-  EXPECT_FALSE(cache.mark_and_check(1000, key1));
-
-  // Others should still be there
+  // Others should still be there (check these BEFORE key1 to avoid cache modification)
   EXPECT_TRUE(cache.mark_and_check(2000, key2));
   EXPECT_TRUE(cache.mark_and_check(3000, key3));
   EXPECT_TRUE(cache.mark_and_check(4000, key4));
+
+  // key1 should have been evicted - will not detect as replay
+  EXPECT_FALSE(cache.mark_and_check(1000, key1));
 }
 
 TEST_F(HandshakeReplayCacheTest, LRUOrderingUpdatedOnAccess) {
