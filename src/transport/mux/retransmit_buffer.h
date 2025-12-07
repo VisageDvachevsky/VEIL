@@ -40,9 +40,9 @@ struct RetransmitConfig {
   // Maximum number of pending packets (0 = unlimited).
   std::size_t max_pending_count{10000};
   // High water mark for buffer (triggers aggressive cleanup).
-  std::size_t high_water_mark{800 * 1024};  // 800 KB
+  std::size_t high_water_mark{static_cast<std::size_t>(800) * 1024};  // 800 KB
   // Low water mark for buffer (stops aggressive cleanup).
-  std::size_t low_water_mark{500 * 1024};   // 500 KB
+  std::size_t low_water_mark{static_cast<std::size_t>(500) * 1024};   // 500 KB
   // Drop policy when buffer is full.
   DropPolicy drop_policy{DropPolicy::kOldest};
   // Enable burst protection (rate limit inserts during congestion).
