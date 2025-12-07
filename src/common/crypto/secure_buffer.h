@@ -111,7 +111,7 @@ class SecureVector {
   explicit SecureVector(std::size_t size) : data_(size, 0) {}
 
   /// Copy constructor
-  SecureVector(const SecureVector& other) : data_(other.data_) {}
+  SecureVector(const SecureVector& other) = default;
 
   /// Move constructor
   SecureVector(SecureVector&& other) noexcept : data_(std::move(other.data_)) {
@@ -231,8 +231,7 @@ struct SecureKeyPair {
   SecureKeyPair() = default;
 
   /// Copy constructor
-  SecureKeyPair(const SecureKeyPair& other)
-      : public_key(other.public_key), secret_key(other.secret_key) {}
+  SecureKeyPair(const SecureKeyPair& other) = default;
 
   /// Move constructor
   SecureKeyPair(SecureKeyPair&& other) noexcept

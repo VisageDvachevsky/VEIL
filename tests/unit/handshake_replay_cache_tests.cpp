@@ -176,13 +176,14 @@ TEST_F(HandshakeReplayCacheTest, ThreadSafety) {
   constexpr int iterations = 50;   // Reduced for faster test
 
   std::vector<std::thread> threads;
+  threads.reserve(static_cast<std::size_t>(num_threads));
   std::atomic<int> total_replays{0};
 
   for (int t = 0; t < num_threads; ++t) {
     threads.emplace_back([&cache, &key, t, &total_replays]() {
       for (int i = 0; i < iterations; ++i) {
         // Each thread uses different timestamps
-        const std::uint64_t ts = static_cast<std::uint64_t>(t * 1000 + i);
+        const std::uint64_t ts = static_cast<std::uint64_t>(t) * 1000 + static_cast<std::uint64_t>(i);
         const bool is_replay = cache.mark_and_check(ts, key);
         if (is_replay) {
           total_replays.fetch_add(1, std::memory_order_relaxed);

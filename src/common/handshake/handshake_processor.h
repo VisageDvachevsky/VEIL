@@ -72,9 +72,9 @@ class HandshakeResponder {
   HandshakeResponder(const HandshakeResponder&) = delete;
   HandshakeResponder& operator=(const HandshakeResponder&) = delete;
 
-  // Enable move
-  HandshakeResponder(HandshakeResponder&&) = default;
-  HandshakeResponder& operator=(HandshakeResponder&&) = default;
+  // Disable move (contains non-movable replay cache with mutex)
+  HandshakeResponder(HandshakeResponder&&) = delete;
+  HandshakeResponder& operator=(HandshakeResponder&&) = delete;
 
   std::optional<Result> handle_init(std::span<const std::uint8_t> init_bytes);
 
