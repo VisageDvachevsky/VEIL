@@ -1,0 +1,10 @@
+Checks: >
+  -*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-implicit-bool-conversion,
+  readability-magic-numbers
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'src/.*'
+FormatStyle: none

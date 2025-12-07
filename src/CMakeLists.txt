@@ -1,0 +1,30 @@
+add_library(veil_common STATIC
+  common/crypto/random.cpp
+  common/crypto/crypto_engine.cpp
+  common/logging/logger.cpp
+  common/config/app_config.cpp
+  common/packet/packet_builder.cpp
+  common/session/replay_window.cpp
+  common/session/session_rotator.cpp
+  common/handshake/handshake_processor.cpp
+  common/utils/rate_limiter.cpp
+  transport/udp_socket/udp_socket.cpp
+  transport/mux/ack_bitmap.cpp
+  transport/mux/reorder_buffer.cpp
+  transport/mux/fragment_reassembly.cpp
+)
+
+target_include_directories(veil_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(veil_common
+  PUBLIC
+    Sodium::Sodium
+    spdlog::spdlog
+    fmt::fmt
+    CLI11::CLI11
+)
+
+veil_set_warnings(veil_common)
+
+if(TARGET sodium_ep)
+  add_dependencies(veil_common sodium_ep)
+endif()
