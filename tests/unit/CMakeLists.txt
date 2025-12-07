@@ -14,6 +14,11 @@ add_executable(veil_unit_tests
   transport_session_tests.cpp
   timer_heap_tests.cpp
   obfuscation_tests.cpp
+  tun_device_tests.cpp
+  mtu_discovery_tests.cpp
+  signal_handler_tests.cpp
+  daemon_tests.cpp
+  session_table_tests.cpp
 )
 
 target_link_libraries(veil_unit_tests PRIVATE
