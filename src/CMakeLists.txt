@@ -2,13 +2,19 @@ add_library(veil_common STATIC
   common/crypto/random.cpp
   common/crypto/crypto_engine.cpp
   common/logging/logger.cpp
+  common/logging/constrained_logger.cpp
   common/config/app_config.cpp
   common/packet/packet_builder.cpp
   common/session/replay_window.cpp
   common/session/session_rotator.cpp
+  common/session/session_lifecycle.cpp
+  common/session/idle_timeout.cpp
   common/handshake/handshake_processor.cpp
   common/utils/rate_limiter.cpp
   common/utils/timer_heap.cpp
+  common/utils/advanced_rate_limiter.cpp
+  common/utils/graceful_degradation.cpp
+  common/metrics/metrics.cpp
   common/obfuscation/obfuscation_profile.cpp
   common/signal/signal_handler.cpp
   common/daemon/daemon.cpp
@@ -26,6 +32,7 @@ add_library(veil_common STATIC
   tun/routing.cpp
   tun/mtu_discovery.cpp
   tunnel/tunnel.cpp
+  tunnel/session_migration.cpp
   server/session_table.cpp
 )
 

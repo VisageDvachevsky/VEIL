@@ -65,7 +65,9 @@ TEST(PacketTests, RejectsPayloadLengthMismatch) {
   builder.add_frame(packet::FrameType::kData, payload);
   auto bytes = builder.build();
   // Truncate the packet to break payload length validation.
-  bytes.resize(bytes.size() - 2);
+  ASSERT_GT(bytes.size(), 2U);
+  bytes.pop_back();
+  bytes.pop_back();
   auto parsed = packet::PacketParser::parse(bytes);
   EXPECT_FALSE(parsed.has_value());
 }
