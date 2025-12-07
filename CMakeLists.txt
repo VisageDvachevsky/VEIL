@@ -13,6 +13,8 @@ include(cmake/ProjectOptions.cmake)
 include(cmake/Warnings.cmake)
 include(cmake/Dependencies.cmake)
 
+option(VEIL_BUILD_TOOLS "Build tools and utilities" ON)
+
 if(VEIL_BUILD_TESTS)
   enable_testing()
 endif()
@@ -21,4 +23,8 @@ add_subdirectory(src)
 
 if(VEIL_BUILD_TESTS)
   add_subdirectory(tests)
+endif()
+
+if(VEIL_BUILD_TOOLS)
+  add_subdirectory(src/tools)
 endif()

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -23,13 +24,21 @@ struct ControlFrame {
   std::vector<std::uint8_t> payload;
 };
 
-enum class FrameKind : std::uint8_t { kData = 1, kAck = 2, kControl = 3 };
+// Heartbeat frame for keep-alive and obfuscation.
+struct HeartbeatFrame {
+  std::uint64_t timestamp{0};  // Milliseconds since epoch or relative.
+  std::uint64_t sequence{0};   // Heartbeat sequence number.
+  std::vector<std::uint8_t> payload;  // Optional fake telemetry data.
+};
+
+enum class FrameKind : std::uint8_t { kData = 1, kAck = 2, kControl = 3, kHeartbeat = 4 };
 
 struct MuxFrame {
   FrameKind kind{};
   DataFrame data;
   AckFrame ack;
   ControlFrame control;
+  HeartbeatFrame heartbeat;
 };
 
 }  // namespace veil::mux

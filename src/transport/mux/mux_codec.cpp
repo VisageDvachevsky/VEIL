@@ -76,6 +76,13 @@ std::vector<std::uint8_t> MuxCodec::encode(const MuxFrame& frame) {
       out.insert(out.end(), frame.control.payload.begin(), frame.control.payload.end());
       break;
     }
+    case FrameKind::kHeartbeat: {
+      write_u64(out, frame.heartbeat.timestamp);
+      write_u64(out, frame.heartbeat.sequence);
+      write_u16(out, static_cast<std::uint16_t>(frame.heartbeat.payload.size()));
+      out.insert(out.end(), frame.heartbeat.payload.begin(), frame.heartbeat.payload.end());
+      break;
+    }
   }
 
   return out;
@@ -127,6 +134,19 @@ std::optional<MuxFrame> MuxCodec::decode(std::span<const std::uint8_t> data) {
       frame.control.payload.assign(data.begin() + kControlHeaderSize, data.end());
       break;
     }
+    case FrameKind::kHeartbeat: {
+      if (data.size() < kHeartbeatHeaderSize) {
+        return std::nullopt;
+      }
+      frame.heartbeat.timestamp = read_u64(data, 1);
+      frame.heartbeat.sequence = read_u64(data, 9);
+      std::uint16_t payload_len = read_u16(data, 17);
+      if (data.size() != kHeartbeatHeaderSize + payload_len) {
+        return std::nullopt;
+      }
+      frame.heartbeat.payload.assign(data.begin() + kHeartbeatHeaderSize, data.end());
+      break;
+    }
     default:
       return std::nullopt;
   }
@@ -142,6 +162,8 @@ std::size_t MuxCodec::encoded_size(const MuxFrame& frame) {
       return kAckSize;
     case FrameKind::kControl:
       return kControlHeaderSize + frame.control.payload.size();
+    case FrameKind::kHeartbeat:
+      return kHeartbeatHeaderSize + frame.heartbeat.payload.size();
   }
   return 0;
 }
@@ -171,6 +193,16 @@ MuxFrame make_control_frame(std::uint8_t type, std::vector<std::uint8_t> payload
   frame.kind = FrameKind::kControl;
   frame.control.type = type;
   frame.control.payload = std::move(payload);
+  return frame;
+}
+
+MuxFrame make_heartbeat_frame(std::uint64_t timestamp, std::uint64_t sequence,
+                               std::vector<std::uint8_t> payload) {
+  MuxFrame frame{};
+  frame.kind = FrameKind::kHeartbeat;
+  frame.heartbeat.timestamp = timestamp;
+  frame.heartbeat.sequence = sequence;
+  frame.heartbeat.payload = std::move(payload);
   return frame;
 }
 

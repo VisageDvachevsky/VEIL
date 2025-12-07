@@ -9,7 +9,9 @@
 #include <stdexcept>
 #include <vector>
 
+#include "common/crypto/crypto_engine.h"
 #include "common/crypto/random.h"
+#include "common/obfuscation/obfuscation_profile.h"
 
 namespace {
 constexpr std::size_t kHeaderSize = 2 + 1 + 1 + 8 + 8 + 1 + 2;
@@ -68,6 +70,83 @@ PacketBuilder& PacketBuilder::add_padding(std::size_t bytes) {
   return *this;
 }
 
+PacketBuilder& PacketBuilder::set_obfuscation_profile(
+    const obfuscation::ObfuscationProfile* profile) {
+  profile_ = profile;
+  return *this;
+}
+
+PacketBuilder& PacketBuilder::add_profile_prefix() {
+  if (profile_ == nullptr || !profile_->enabled) {
+    return *this;
+  }
+
+  const auto prefix_size = obfuscation::compute_prefix_size(*profile_, packet_.sequence);
+  if (prefix_size == 0) {
+    return *this;
+  }
+
+  // Generate deterministic prefix using HMAC of profile_seed + sequence + "prefix".
+  std::vector<std::uint8_t> input;
+  input.reserve(profile_->profile_seed.size() + 8 + 6);
+  input.insert(input.end(), profile_->profile_seed.begin(), profile_->profile_seed.end());
+  for (int i = 7; i >= 0; --i) {
+    input.push_back(static_cast<std::uint8_t>((packet_.sequence >> (8 * i)) & 0xFF));
+  }
+  const char* context = "prefix";
+  input.insert(input.end(), context, context + 6);
+
+  auto hmac = crypto::hmac_sha256(profile_->profile_seed, input);
+  prefix_.assign(hmac.begin(), hmac.begin() + prefix_size);
+  return *this;
+}
+
+PacketBuilder& PacketBuilder::add_profile_padding() {
+  if (profile_ == nullptr || !profile_->enabled) {
+    return *this;
+  }
+
+  const auto padding_size = obfuscation::compute_padding_size(*profile_, packet_.sequence);
+  if (padding_size == 0) {
+    return *this;
+  }
+
+  // Generate deterministic padding using HMAC.
+  std::vector<std::uint8_t> padding;
+  padding.reserve(padding_size);
+
+  // Generate enough HMAC outputs to fill padding.
+  std::uint64_t counter = 0;
+  while (padding.size() < padding_size) {
+    std::vector<std::uint8_t> input;
+    input.reserve(profile_->profile_seed.size() + 8 + 8 + 7);
+    input.insert(input.end(), profile_->profile_seed.begin(), profile_->profile_seed.end());
+    for (int i = 7; i >= 0; --i) {
+      input.push_back(static_cast<std::uint8_t>((packet_.sequence >> (8 * i)) & 0xFF));
+    }
+    for (int i = 7; i >= 0; --i) {
+      input.push_back(static_cast<std::uint8_t>((counter >> (8 * i)) & 0xFF));
+    }
+    const char* context = "padding";
+    input.insert(input.end(), context, context + 7);
+
+    auto hmac = crypto::hmac_sha256(profile_->profile_seed, input);
+    const auto to_copy =
+        std::min(hmac.size(), static_cast<std::size_t>(padding_size - padding.size()));
+    padding.insert(padding.end(), hmac.begin(), hmac.begin() + static_cast<std::ptrdiff_t>(to_copy));
+    ++counter;
+  }
+
+  packet_.frames.push_back(Frame{FrameType::kPadding, std::move(padding)});
+  return *this;
+}
+
+PacketBuilder& PacketBuilder::add_heartbeat(std::span<const std::uint8_t> payload) {
+  packet_.frames.push_back(
+      Frame{FrameType::kHeartbeat, std::vector<std::uint8_t>(payload.begin(), payload.end())});
+  return *this;
+}
+
 std::vector<std::uint8_t> PacketBuilder::build() const {
   if (packet_.frames.size() > std::numeric_limits<std::uint8_t>::max()) {
     throw std::runtime_error("frame count overflow");
@@ -81,7 +160,12 @@ std::vector<std::uint8_t> PacketBuilder::build() const {
   }
 
   std::vector<std::uint8_t> buffer;
-  buffer.reserve(kHeaderSize + payload_size);
+  buffer.reserve(prefix_.size() + kHeaderSize + payload_size);
+
+  // Add obfuscation prefix if present.
+  if (!prefix_.empty()) {
+    buffer.insert(buffer.end(), prefix_.begin(), prefix_.end());
+  }
 
   const auto magic_bytes = magic();
   buffer.insert(buffer.end(), magic_bytes.begin(), magic_bytes.end());

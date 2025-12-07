@@ -8,6 +8,8 @@ add_library(veil_common STATIC
   common/session/session_rotator.cpp
   common/handshake/handshake_processor.cpp
   common/utils/rate_limiter.cpp
+  common/utils/timer_heap.cpp
+  common/obfuscation/obfuscation_profile.cpp
   transport/udp_socket/udp_socket.cpp
   transport/mux/ack_bitmap.cpp
   transport/mux/reorder_buffer.cpp
@@ -15,6 +17,7 @@ add_library(veil_common STATIC
   transport/mux/mux_codec.cpp
   transport/mux/retransmit_buffer.cpp
   transport/session/transport_session.cpp
+  transport/event_loop/event_loop.cpp
 )
 
 target_include_directories(veil_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
