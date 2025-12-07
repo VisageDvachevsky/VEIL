@@ -205,131 +205,255 @@ IV = HMAC-SHA256(session_key, seq_number || session_id)[0:12]
 
 ***
 
-## 5. Handshake протокол
+## 5. Handshake протокол (Simplified Production Implementation)
+
+**Примечание**: Текущая реализация использует упрощённую, но криптографически безопасную
+схему handshake. Она проще, чем первоначальная спецификация, но обеспечивает те же
+гарантии безопасности: аутентификация, forward secrecy, защита от replay-атак.
 
 ### 5.1. Фаза 1: Client → Server (INIT)
 
-**Цель**: Клиент доказывает серверу знание shared secret
+**Цель**: Установить аутентифицированную сессию с forward secrecy
 
-#### Структура HANDSHAKE payload
+#### Структура INIT Message
 
 ```
-struct HandshakePayload {
-    uint8_t  frame_type;              // 0x01
-    uint8_t  ephemeral_public_key[32]; // X25519 public key
-    uint8_t  nonce[32];                // Random nonce
-    uint8_t  auth_token[32];           // HMAC(shared_secret, client_id || timestamp)
-    uint8_t  client_id[16];            // Уникальный ID клиента
-    uint32_t timestamp;                // unix_time / 30 (30-сек интервалы)
-    uint8_t  cipher_suite;             // 0x01 = ChaCha20-Poly1305
-    uint8_t  protocol_version;         // 0x01 = VEIL v1
+Wire format:
+[Magic:2] [Version:1] [Type:1] [Timestamp:8] [EphemeralPubKey:32] [HMAC:32]
+
+struct InitMessage {
+    uint8_t  magic[2];                 // "HS"
+    uint8_t  version;                  // 0x01
+    uint8_t  type;                     // 0x01 (kInit)
+    uint64_t timestamp_ms;             // Миллисекунды с epoch (big-endian)
+    uint8_t  ephemeral_public_key[32]; // X25519 ephemeral public key
+    uint8_t  hmac[32];                 // HMAC-SHA256 auth tag
 }
-// Total: 118 bytes (без шифрования)
+// Total: 2 + 1 + 1 + 8 + 32 + 32 = 76 bytes
+```
+
+#### HMAC Payload для INIT:
+```
+hmac_payload = [Magic:2] [Version:1] [Type:1] [Timestamp:8] [EphemeralPubKey:32]
+hmac = HMAC-SHA256(PSK, hmac_payload)
 ```
 
 #### Псевдокод клиента
 
 ```cpp
-// Генерация ephemeral keypair
-eph_private = X25519::generate_private_key()
-eph_public  = X25519::derive_public_key(eph_private)
+// Генерация ephemeral keypair для Forward Secrecy
+KeyPair ephemeral = generate_x25519_keypair()
 
-// Вычисление shared secret
-shared_secret = X25519::compute_shared(eph_private, server_static_public)
+// Текущий timestamp (миллисекунды)
+uint64_t timestamp_ms = current_time_ms()
 
-// Timestamp (защита от replay)
-timestamp = current_unix_time() / 30
+// Формирование HMAC payload
+hmac_payload = build_init_hmac_payload(timestamp_ms, ephemeral.public_key)
 
-// Authentication token
-auth_token = HMAC_SHA256(shared_secret, client_id || timestamp)[0:32]
+// Вычисление HMAC для аутентификации
+hmac = HMAC_SHA256(PSK, hmac_payload)
 
-// Формирование payload
-handshake = {
-    frame_type: 0x01,
-    ephemeral_public_key: eph_public,
-    nonce: random_bytes(32),
-    auth_token: auth_token,
-    client_id: config.client_id,
-    timestamp: timestamp,
-    cipher_suite: 0x01,
-    protocol_version: 0x01
+// Формирование INIT сообщения
+init_msg = {
+    magic: "HS",
+    version: 0x01,
+    type: 0x01,  // kInit
+    timestamp_ms: timestamp_ms,
+    ephemeral_public_key: ephemeral.public_key,
+    hmac: hmac
 }
 
-// Обертка в VEIL пакет
-veil_packet = build_veil_packet(handshake, seq=0, profile_seed=config.seed)
-
 // Отправка на сервер
-udp_socket.send(veil_packet, server_address)
+udp_socket.send(init_msg, server_address)
 ```
 
-### 5.2. Фаза 2: Server → Client (INIT_RESPONSE)
+### 5.2. Фаза 2: Server → Client (RESPONSE)
 
-**Цель**: Сервер подтверждает соединение и отправляет session parameters
+**Цель**: Подтвердить handshake и передать session parameters
+
+#### Структура RESPONSE Message
+
+```
+Wire format:
+[Magic:2] [Version:1] [Type:1] [InitTS:8] [RespTS:8] [SessionID:8]
+[ResponderPubKey:32] [HMAC:32]
+
+struct ResponseMessage {
+    uint8_t  magic[2];                     // "HS"
+    uint8_t  version;                      // 0x01
+    uint8_t  type;                         // 0x02 (kResponse)
+    uint64_t init_timestamp_ms;            // Отражение timestamp из INIT
+    uint64_t response_timestamp_ms;        // Timestamp сервера
+    uint64_t session_id;                   // Случайный session ID
+    uint8_t  responder_ephemeral_key[32];  // Ephemeral key сервера
+    uint8_t  hmac[32];                     // HMAC-SHA256 auth tag
+}
+// Total: 2 + 1 + 1 + 8 + 8 + 8 + 32 + 32 = 92 bytes
+```
+
+#### HMAC Payload для RESPONSE:
+```
+hmac_payload = [Magic:2] [Version:1] [Type:1] [InitTS:8] [RespTS:8]
+               [SessionID:8] [InitPubKey:32] [RespPubKey:32]
+hmac = HMAC-SHA256(PSK, hmac_payload)
+```
 
 #### Псевдокод сервера
 
 ```cpp
-// Получение пакета
-raw_packet = udp_socket.receive()
+// Получение и парсинг INIT
+init_msg = parse_init_message(received_packet)
 
-// Попытка расшифровки
-for prefix_len in [4..12]:
-    encrypted = raw_packet[prefix_len:]
-    
-    // Попробовать расшифровать как HANDSHAKE
-    // (используем временный ключ для первого пакета)
-    decrypted = try_decrypt(encrypted, temporary_key)
-    
-    if decrypted.frame_type == 0x01:  // HANDSHAKE
-        // Извлечь данные
-        eph_pub = decrypted.ephemeral_public_key
-        client_id = decrypted.client_id
-        timestamp = decrypted.timestamp
-        auth_token = decrypted.auth_token
-        
-        // Проверка timestamp (защита от replay)
-        if abs(current_unix_time() / 30 - timestamp) > 6:  // 180 sec window
-            return IGNORE_SILENTLY
-        
-        // Вычисление shared secret
-        shared_secret = X25519::compute_shared(server_private_key, eph_pub)
-        
-        // Проверка auth token
-        expected_auth = HMAC_SHA256(shared_secret, client_id || timestamp)[0:32]
-        if auth_token != expected_auth:
-            return IGNORE_SILENTLY  // Anti-probing: no response
-        
-        // Auth OK! Создание сессии
-        session_id = random_uint32()
-        session_key = HKDF_SHA256(shared_secret, "veil-session-key", 32)
-        
-        sessions[session_id] = {
-            shared_secret: shared_secret,
-            session_key: session_key,
-            client_addr: sender_address,
-            last_seen: current_time(),
-            sequence_counter: 0
-        }
-        
-        // Формирование ответа
-        response = {
-            frame_type: 0x02,  // DATA (служит как INIT_RESPONSE)
-            session_id: session_id,
-            server_nonce: random_bytes(32),
-            initial_counter: 0
-        }
-        
-        // Отправка ответа
-        veil_response = build_veil_packet(response, session_key, seq=0)
-        udp_socket.send(veil_response, sender_address)
+// Проверка magic и version
+if (init_msg.magic != "HS" || init_msg.version != 0x01 || init_msg.type != 0x01)
+    return IGNORE_SILENTLY
+
+// Rate limiting (защита от flooding)
+if (!rate_limiter.allow())
+    return IGNORE_SILENTLY
+
+// Проверка timestamp (защита от replay)
+if (!timestamp_valid(init_msg.timestamp_ms, skew_tolerance))
+    return IGNORE_SILENTLY
+
+// Проверка replay cache (критическое дополнение!)
+if (replay_cache.mark_and_check(init_msg.timestamp_ms, init_msg.ephemeral_key))
+    return IGNORE_SILENTLY  // Replay detected
+
+// Проверка HMAC
+hmac_payload = build_init_hmac_payload(init_msg.timestamp_ms, init_msg.ephemeral_key)
+expected_hmac = HMAC_SHA256(PSK, hmac_payload)
+if (init_msg.hmac != expected_hmac)
+    return IGNORE_SILENTLY  // Anti-probing: no response
+
+// HMAC OK! Генерация ephemeral keypair сервера
+KeyPair responder_keys = generate_x25519_keypair()
+
+// Вычисление shared secret через ECDH
+shared_secret = compute_shared_secret(responder_keys.secret_key,
+                                      init_msg.ephemeral_key)
+
+// Деривация session keys через HKDF
+info = "VEILHS1" || init_ephemeral_key || responder_ephemeral_key
+session_keys = derive_session_keys(shared_secret, PSK, info, is_initiator=false)
+
+// Генерация session ID
+session_id = random_uint64()
+
+// Формирование RESPONSE
+response_timestamp_ms = current_time_ms()
+hmac_payload = build_hmac_payload(kResponse, init_msg.timestamp_ms,
+                                   response_timestamp_ms, session_id,
+                                   init_msg.ephemeral_key, responder_keys.public_key)
+response_hmac = HMAC_SHA256(PSK, hmac_payload)
+
+response_msg = {
+    magic: "HS",
+    version: 0x01,
+    type: 0x02,  // kResponse
+    init_timestamp_ms: init_msg.timestamp_ms,  // Echo back
+    response_timestamp_ms: response_timestamp_ms,
+    session_id: session_id,
+    responder_ephemeral_key: responder_keys.public_key,
+    hmac: response_hmac
+}
+
+// Создание session state
+sessions[session_id] = {
+    keys: session_keys,
+    initiator_ephemeral: init_msg.ephemeral_key,
+    responder_ephemeral: responder_keys.public_key,
+    ...
+}
+
+// Отправка RESPONSE
+udp_socket.send(response_msg, client_address)
 ```
 
-### 5.3. Фаза 3: Установление сессии
+#### Псевдокод клиента (обработка RESPONSE)
 
-После получения INIT_RESPONSE обе стороны имеют:
-- `session_key` — ключ для ChaCha20-Poly1305
-- `session_id` — идентификатор сессии (меняется каждые 30 сек)
-- `sequence_counter` — счётчик пакетов для IV
+```cpp
+// Получение и парсинг RESPONSE
+response_msg = parse_response_message(received_packet)
+
+// Проверка, что мы отправляли INIT
+if (!init_sent)
+    return ERROR
+
+// Проверка magic, version, type
+if (response_msg.magic != "HS" || response_msg.version != 0x01 ||
+    response_msg.type != 0x02)
+    return ERROR
+
+// Проверка, что init_timestamp соответствует нашему INIT
+if (response_msg.init_timestamp_ms != our_init_timestamp)
+    return ERROR
+
+// Проверка response timestamp
+if (!timestamp_valid(response_msg.response_timestamp_ms, skew_tolerance))
+    return ERROR
+
+// Проверка HMAC
+hmac_payload = build_hmac_payload(kResponse, response_msg.init_timestamp_ms,
+                                   response_msg.response_timestamp_ms,
+                                   response_msg.session_id,
+                                   our_ephemeral.public_key,
+                                   response_msg.responder_ephemeral_key)
+expected_hmac = HMAC_SHA256(PSK, hmac_payload)
+if (response_msg.hmac != expected_hmac)
+    return ERROR
+
+// HMAC OK! Вычисление shared secret
+shared_secret = compute_shared_secret(our_ephemeral.secret_key,
+                                      response_msg.responder_ephemeral_key)
+
+// Деривация session keys
+info = "VEILHS1" || our_ephemeral.public_key || response_msg.responder_ephemeral_key
+session_keys = derive_session_keys(shared_secret, PSK, info, is_initiator=true)
+
+// Handshake завершён успешно
+return HandshakeSession{
+    session_id: response_msg.session_id,
+    keys: session_keys,
+    initiator_ephemeral: our_ephemeral.public_key,
+    responder_ephemeral: response_msg.responder_ephemeral_key
+}
+```
+
+### 5.3. Результат успешного Handshake
+
+После завершения handshake обе стороны имеют:
+- `session_id` — уникальный идентификатор сессии (64-bit random)
+- `session_keys` — производные ключи для шифрования:
+  - `send_key` [32 bytes] — ключ для ChaCha20-Poly1305 (отправка)
+  - `recv_key` [32 bytes] — ключ для ChaCha20-Poly1305 (приём)
+  - `send_nonce` [12 bytes] — базовый nonce для отправки
+  - `recv_nonce` [12 bytes] — базовый nonce для приёма
+- Ephemeral keys уничтожены → Forward Secrecy обеспечен
+
+### 5.4. Защита от Replay-атак
+
+**Критическое требование безопасности**: Handshake INIT messages должны быть защищены от replay.
+
+Текущая реализация использует **двухуровневую защиту**:
+
+1. **Timestamp Validation**:
+   - Timestamp должен быть в пределах `skew_tolerance` (по умолчанию: 30 секунд)
+   - Проверка: `|current_time_ms - init_timestamp_ms| <= skew_tolerance`
+
+2. **Replay Cache** (LRU Cache):
+   - Хранит пары `(timestamp_ms, ephemeral_public_key)` для недавних INIT
+   - Capacity: 4096 записей (настраиваемо)
+   - Time window: 60 секунд (настраиваемо)
+   - При получении INIT:
+     - Проверить, встречалась ли пара `(ts, eph_key)` раньше
+     - Если ДА → IGNORE_SILENTLY (replay detected)
+     - Если НЕТ → добавить в cache и продолжить обработку
+   - LRU eviction при достижении capacity
+   - Автоматическая очистка expired entries
+
+**Важно**: Replay check должен выполняться **ДО** проверки HMAC для соблюдения
+anti-probing requirement (не давать информацию атакующему)
 
 ***
 

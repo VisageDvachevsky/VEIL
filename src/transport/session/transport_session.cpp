@@ -161,6 +161,15 @@ void TransportSession::rotate_session() {
   current_session_id_ = session_rotator_.rotate(now_fn_());
   packets_since_rotation_ = 0;
   ++stats_.session_rotations;
+
+  // SECURITY NOTE: Nonce counter reset is NOT needed here.
+  // The nonce for ChaCha20-Poly1305 is derived as: derive_nonce(base_nonce, send_sequence_).
+  // The send_sequence_ counter is NOT reset during rotation - it continues monotonically.
+  // This ensures nonce uniqueness: as long as send_sequence_ never repeats (uint64_t gives
+  // 2^64 packets before overflow), we never reuse a (key, nonce) pair.
+  // Session rotation only changes the session_id for protocol-level session management,
+  // not for cryptographic key rotation.
+
   LOG_DEBUG("Session rotated to session_id={}", current_session_id_);
 }
 

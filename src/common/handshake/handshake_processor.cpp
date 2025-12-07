@@ -200,6 +200,13 @@ std::optional<HandshakeResponder::Result> HandshakeResponder::handle_init(
   }
   std::array<std::uint8_t, crypto::kX25519PublicKeySize> init_pub{};
   std::copy_n(init_bytes.begin() + 12, init_pub.size(), init_pub.begin());
+
+  // Check replay cache BEFORE validating HMAC (anti-probing requirement)
+  // If this (timestamp, ephemeral_key) pair was seen before, silently drop
+  if (replay_cache_.mark_and_check(init_ts, init_pub)) {
+    return std::nullopt;  // Replay detected - silently ignore
+  }
+
   const auto provided_mac_begin = init_bytes.begin() + 12 + init_pub.size();
   const std::vector<std::uint8_t> provided_mac(provided_mac_begin, init_bytes.end());
 
