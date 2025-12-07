@@ -1,0 +1,84 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "base",
+            "displayName": "Debug",
+            "description": "Debug build with sanitizers",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "VEIL_ENABLE_SANITIZERS": "ON",
+                "VEIL_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "release",
+            "inherits": "base",
+            "displayName": "Release",
+            "description": "Optimized release build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VEIL_ENABLE_SANITIZERS": "OFF",
+                "VEIL_BUILD_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "ci",
+            "inherits": "debug",
+            "displayName": "CI",
+            "description": "CI build without sanitizers for broader compatibility",
+            "cacheVariables": {
+                "VEIL_ENABLE_SANITIZERS": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "ci",
+            "configurePreset": "ci"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "output": {
+                "outputOnFailure": true,
+                "verbosity": "verbose"
+            },
+            "execution": {
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "ci",
+            "configurePreset": "ci",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ]
+}
