@@ -14,6 +14,17 @@
 #include <system_error>
 #include <vector>
 
+#include "common/logging/logger.h"
+
+// Check for sendmmsg availability (Linux 3.0+, glibc 2.14+).
+// On systems without sendmmsg, we fall back to multiple sendto calls.
+#if defined(__linux__) && defined(__GLIBC__) && \
+    (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 14))
+#define VEIL_HAS_SENDMMSG 1
+#else
+#define VEIL_HAS_SENDMMSG 0
+#endif
+
 namespace {
 std::error_code last_error() { return std::error_code(errno, std::generic_category()); }
 
@@ -113,6 +124,9 @@ bool UdpSocket::send_batch(std::span<const UdpPacket> packets, std::error_code& 
   if (packets.empty()) {
     return true;
   }
+
+#if VEIL_HAS_SENDMMSG
+  // Use sendmmsg for better performance when available.
   std::vector<mmsghdr> messages(packets.size());
   std::vector<sockaddr_in> addrs(packets.size());
   std::vector<iovec> iovecs(packets.size());
@@ -134,9 +148,28 @@ bool UdpSocket::send_batch(std::span<const UdpPacket> packets, std::error_code& 
   }
   const auto sent =
       ::sendmmsg(fd_, messages.data(), static_cast<unsigned int>(messages.size()), 0);
-  if (sent < 0 || static_cast<std::size_t>(sent) != packets.size()) {
+  if (sent < 0) {
+    // If sendmmsg fails with EPERM (sandbox/container), fall back to sendto.
+    if (errno == EPERM || errno == ENOSYS) {
+      LOG_DEBUG("sendmmsg failed with {}, falling back to sendto", errno);
+      goto fallback;
+    }
     ec = last_error();
     return false;
+  }
+  if (static_cast<std::size_t>(sent) != packets.size()) {
+    ec = last_error();
+    return false;
+  }
+  return true;
+
+fallback:
+#endif
+  // Fallback: send each packet individually with sendto.
+  for (const auto& pkt : packets) {
+    if (!send(pkt.data, pkt.remote, ec)) {
+      return false;
+    }
   }
   return true;
 }
