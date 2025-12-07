@@ -14,12 +14,49 @@ RetransmitBuffer::RetransmitBuffer(RetransmitConfig config, std::function<TimePo
     : config_(config),
       now_fn_(std::move(now_fn)),
       estimated_rtt_(config_.initial_rtt),
-      current_rto_(config_.initial_rtt) {}
+      current_rto_(config_.initial_rtt),
+      rate_limit_window_start_(now_fn_()) {}
 
 bool RetransmitBuffer::insert(std::uint64_t sequence, std::vector<std::uint8_t> data) {
-  if (buffered_bytes_ + data.size() > config_.max_buffer_bytes) {
+  return insert_with_priority(sequence, std::move(data), PacketPriority::kNormal);
+}
+
+bool RetransmitBuffer::insert_with_priority(std::uint64_t sequence, std::vector<std::uint8_t> data,
+                                             PacketPriority priority) {
+  // Check rate limit first.
+  if (!check_rate_limit()) {
+    ++stats_.packets_dropped_rate_limit;
+    ++stats_.packets_dropped;
     return false;
   }
+
+  // Check pending count limit.
+  if (config_.max_pending_count > 0 && pending_.size() >= config_.max_pending_count) {
+    // Try to make room.
+    if (!make_room(data.size())) {
+      ++stats_.packets_dropped_buffer_full;
+      ++stats_.packets_dropped;
+      return false;
+    }
+  }
+
+  // Check buffer size.
+  if (buffered_bytes_ + data.size() > config_.max_buffer_bytes) {
+    // Try to make room according to drop policy.
+    if (!make_room(data.size())) {
+      ++stats_.packets_dropped_buffer_full;
+      ++stats_.packets_dropped;
+      return false;
+    }
+  }
+
+  // Check high water mark.
+  if (is_above_high_water()) {
+    ++stats_.high_water_mark_hits;
+    // Trigger cleanup to get below low water mark.
+    force_cleanup(config_.low_water_mark);
+  }
+
   if (pending_.count(sequence) != 0) {
     return false;  // Already tracking this sequence
   }
@@ -33,6 +70,7 @@ bool RetransmitBuffer::insert(std::uint64_t sequence, std::vector<std::uint8_t> 
       .last_sent = now,
       .next_retry = now + rto,
       .retry_count = 0,
+      .priority = priority,
   };
 
   buffered_bytes_ += pkt.data.size();
@@ -158,6 +196,141 @@ std::chrono::milliseconds RetransmitBuffer::calculate_rto() const {
   const auto clamped =
       std::clamp(rto.count(), config_.min_rto.count(), config_.max_rto.count());
   return std::chrono::milliseconds(clamped);
+}
+
+bool RetransmitBuffer::make_room(std::size_t bytes_needed) {
+  if (pending_.empty()) {
+    return false;
+  }
+
+  // Apply drop policy.
+  switch (config_.drop_policy) {
+    case DropPolicy::kNewest:
+      // Don't make room - reject the new packet.
+      return false;
+
+    case DropPolicy::kOldest: {
+      // Drop oldest packets (lowest sequence numbers) until we have room.
+      while (!pending_.empty() && buffered_bytes_ + bytes_needed > config_.max_buffer_bytes) {
+        auto it = pending_.begin();
+        buffered_bytes_ -= it->second.data.size();
+        ++stats_.packets_dropped_buffer_full;
+        ++stats_.packets_dropped;
+        pending_.erase(it);
+      }
+      return buffered_bytes_ + bytes_needed <= config_.max_buffer_bytes;
+    }
+
+    case DropPolicy::kLowPriority: {
+      // Drop low-priority packets first.
+      // First pass: drop kLow priority.
+      for (auto it = pending_.begin(); it != pending_.end();) {
+        if (buffered_bytes_ + bytes_needed <= config_.max_buffer_bytes) {
+          return true;
+        }
+        if (it->second.priority == PacketPriority::kLow) {
+          buffered_bytes_ -= it->second.data.size();
+          ++stats_.packets_dropped_buffer_full;
+          ++stats_.packets_dropped;
+          it = pending_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      // Second pass: drop kNormal priority.
+      for (auto it = pending_.begin(); it != pending_.end();) {
+        if (buffered_bytes_ + bytes_needed <= config_.max_buffer_bytes) {
+          return true;
+        }
+        if (it->second.priority == PacketPriority::kNormal) {
+          buffered_bytes_ -= it->second.data.size();
+          ++stats_.packets_dropped_buffer_full;
+          ++stats_.packets_dropped;
+          it = pending_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      // Third pass: drop kHigh priority (but not kCritical).
+      for (auto it = pending_.begin(); it != pending_.end();) {
+        if (buffered_bytes_ + bytes_needed <= config_.max_buffer_bytes) {
+          return true;
+        }
+        if (it->second.priority == PacketPriority::kHigh) {
+          buffered_bytes_ -= it->second.data.size();
+          ++stats_.packets_dropped_buffer_full;
+          ++stats_.packets_dropped;
+          it = pending_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      // Cannot drop kCritical packets.
+      return buffered_bytes_ + bytes_needed <= config_.max_buffer_bytes;
+    }
+  }
+
+  return false;
+}
+
+bool RetransmitBuffer::check_rate_limit() {
+  if (!config_.enable_burst_protection || config_.max_insert_rate == 0) {
+    return true;
+  }
+
+  const auto now = now_fn_();
+  const auto window_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+      now - rate_limit_window_start_);
+
+  // Reset window every second.
+  if (window_duration >= std::chrono::seconds(1)) {
+    rate_limit_window_start_ = now;
+    inserts_in_window_ = 0;
+  }
+
+  // Check if we're within rate limit.
+  if (inserts_in_window_ >= config_.max_insert_rate) {
+    return false;
+  }
+
+  ++inserts_in_window_;
+  return true;
+}
+
+std::size_t RetransmitBuffer::force_cleanup(std::size_t target_bytes) {
+  ++stats_.cleanup_invocations;
+
+  std::size_t dropped = 0;
+
+  // First, drop packets that have exceeded max retries.
+  for (auto it = pending_.begin(); it != pending_.end();) {
+    if (buffered_bytes_ <= target_bytes) {
+      break;
+    }
+    if (it->second.retry_count > config_.max_retries) {
+      buffered_bytes_ -= it->second.data.size();
+      ++stats_.packets_dropped_max_retries;
+      ++stats_.packets_dropped;
+      ++dropped;
+      it = pending_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  // Then use normal drop policy.
+  if (buffered_bytes_ > target_bytes) {
+    const auto bytes_to_free = buffered_bytes_ - target_bytes;
+    if (make_room(bytes_to_free)) {
+      // Count additional drops.
+      // Note: make_room already updates stats.
+    }
+  }
+
+  return dropped;
 }
 
 }  // namespace veil::mux

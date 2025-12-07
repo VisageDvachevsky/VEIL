@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -174,6 +175,398 @@ std::chrono::milliseconds compute_heartbeat_interval(const ObfuscationProfile& p
   const auto value = derive_value(profile.profile_seed, heartbeat_count, "heartbeat");
   const auto range = static_cast<std::uint64_t>(max_ms - min_ms + 1);
   return std::chrono::milliseconds(min_ms + static_cast<long long>(value % range));
+}
+
+PaddingSizeClass compute_padding_class(const ObfuscationProfile& profile, std::uint64_t sequence) {
+  if (!profile.enabled || !profile.use_advanced_padding) {
+    return PaddingSizeClass::kSmall;
+  }
+
+  const auto& dist = profile.padding_distribution;
+  const auto total_weight = static_cast<std::uint16_t>(dist.small_weight + dist.medium_weight + dist.large_weight);
+  if (total_weight == 0) {
+    return PaddingSizeClass::kSmall;
+  }
+
+  const auto value = derive_value(profile.profile_seed, sequence, "padclass");
+  const auto roll = static_cast<std::uint16_t>(value % total_weight);
+
+  if (roll < dist.small_weight) {
+    return PaddingSizeClass::kSmall;
+  }
+  if (roll < static_cast<std::uint16_t>(dist.small_weight + dist.medium_weight)) {
+    return PaddingSizeClass::kMedium;
+  }
+  return PaddingSizeClass::kLarge;
+}
+
+std::uint16_t compute_advanced_padding_size(const ObfuscationProfile& profile, std::uint64_t sequence) {
+  if (!profile.enabled) {
+    return 0;
+  }
+
+  if (!profile.use_advanced_padding) {
+    return compute_padding_size(profile, sequence);
+  }
+
+  const auto& dist = profile.padding_distribution;
+  const auto padding_class = compute_padding_class(profile, sequence);
+
+  std::uint16_t min_size = 0;
+  std::uint16_t max_size = 0;
+
+  switch (padding_class) {
+    case PaddingSizeClass::kSmall:
+      min_size = dist.small_min;
+      max_size = dist.small_max;
+      break;
+    case PaddingSizeClass::kMedium:
+      min_size = dist.medium_min;
+      max_size = dist.medium_max;
+      break;
+    case PaddingSizeClass::kLarge:
+      min_size = dist.large_min;
+      max_size = dist.large_max;
+      break;
+  }
+
+  if (min_size >= max_size) {
+    return min_size;
+  }
+
+  // Get base size within the range.
+  const auto value = derive_value(profile.profile_seed, sequence, "advpad");
+  const auto range = static_cast<std::uint16_t>(max_size - min_size + 1);
+  auto base_size = static_cast<std::uint16_t>(min_size + static_cast<std::uint16_t>(value % range));
+
+  // Apply jitter if configured.
+  if (dist.jitter_range > 0) {
+    const auto jitter_value = derive_value(profile.profile_seed, sequence + 1000000, "padjit");
+    const auto jitter_range_full = static_cast<std::uint16_t>(dist.jitter_range * 2 + 1);
+    const auto jitter_offset = static_cast<std::int16_t>(jitter_value % jitter_range_full) -
+                               static_cast<std::int16_t>(dist.jitter_range);
+
+    // Apply jitter but clamp to valid range.
+    const auto new_size = static_cast<std::int32_t>(base_size) + jitter_offset;
+    base_size = static_cast<std::uint16_t>(
+        std::clamp(new_size, static_cast<std::int32_t>(min_size), static_cast<std::int32_t>(max_size)));
+  }
+
+  return base_size;
+}
+
+std::chrono::microseconds compute_timing_jitter_advanced(const ObfuscationProfile& profile,
+                                                          std::uint64_t sequence) {
+  if (!profile.enabled || !profile.timing_jitter_enabled || profile.max_timing_jitter_ms == 0) {
+    return std::chrono::microseconds(0);
+  }
+
+  const auto base_value = derive_value(profile.profile_seed, sequence, "advjit");
+
+  // Normalize to [0, 1).
+  const auto normalized = static_cast<double>(base_value) / static_cast<double>(UINT64_MAX);
+
+  double jitter_ms = 0.0;
+  const auto max_jitter = static_cast<double>(profile.max_timing_jitter_ms);
+
+  switch (profile.timing_jitter_model) {
+    case TimingJitterModel::kUniform:
+      // Uniform distribution: jitter uniformly in [0, max_jitter].
+      jitter_ms = normalized * max_jitter;
+      break;
+
+    case TimingJitterModel::kPoisson: {
+      // Poisson-like: use inverse transform of exponential CDF.
+      // -ln(1 - U) * lambda, where lambda is scaled to give expected value ~ max_jitter/2.
+      const auto lambda = max_jitter / 2.0;
+      // Avoid log(0) by clamping.
+      const auto clamped = std::max(normalized, 1e-10);
+      jitter_ms = -std::log(1.0 - clamped) * lambda;
+      // Cap at max_jitter.
+      jitter_ms = std::min(jitter_ms, max_jitter);
+      break;
+    }
+
+    case TimingJitterModel::kExponential: {
+      // Exponential distribution: -ln(1 - U) * mean.
+      // More bursty than Poisson.
+      const auto mean = max_jitter / 3.0;  // Lower mean for more bursty behavior.
+      const auto clamped = std::max(normalized, 1e-10);
+      jitter_ms = -std::log(1.0 - clamped) * mean;
+      // Cap at max_jitter.
+      jitter_ms = std::min(jitter_ms, max_jitter);
+      break;
+    }
+  }
+
+  // Apply scale factor.
+  jitter_ms *= static_cast<double>(profile.timing_jitter_scale);
+
+  // Convert to microseconds.
+  return std::chrono::microseconds(static_cast<std::int64_t>(jitter_ms * 1000.0));
+}
+
+std::chrono::steady_clock::time_point calculate_next_send_ts(
+    const ObfuscationProfile& profile, std::uint64_t sequence,
+    std::chrono::steady_clock::time_point base_ts) {
+  if (!profile.enabled || !profile.timing_jitter_enabled) {
+    return base_ts;
+  }
+
+  const auto jitter = compute_timing_jitter_advanced(profile, sequence);
+  return base_ts + jitter;
+}
+
+std::vector<std::uint8_t> generate_iot_heartbeat_payload(const ObfuscationProfile& profile,
+                                                          std::uint64_t heartbeat_sequence) {
+  std::vector<std::uint8_t> payload;
+  payload.reserve(32);  // Typical IoT payload size.
+
+  const auto& tmpl = profile.iot_sensor_template;
+
+  // Generate deterministic "random" values based on seed and sequence.
+  const auto temp_val = derive_value(profile.profile_seed, heartbeat_sequence, "iot_temp");
+  const auto humidity_val = derive_value(profile.profile_seed, heartbeat_sequence, "iot_hum");
+  const auto battery_val = derive_value(profile.profile_seed, heartbeat_sequence, "iot_bat");
+
+  // Normalize to ranges.
+  const auto temp_norm = static_cast<double>(temp_val % 10000) / 10000.0;
+  const auto humidity_norm = static_cast<double>(humidity_val % 10000) / 10000.0;
+  const auto battery_norm = static_cast<double>(battery_val % 10000) / 10000.0;
+
+  const auto temperature = tmpl.temp_min + static_cast<float>(temp_norm * static_cast<double>(tmpl.temp_max - tmpl.temp_min));
+  const auto humidity = tmpl.humidity_min + static_cast<float>(humidity_norm * static_cast<double>(tmpl.humidity_max - tmpl.humidity_min));
+  const auto battery = tmpl.battery_min + static_cast<float>(battery_norm * static_cast<double>(tmpl.battery_max - tmpl.battery_min));
+
+  // IoT packet structure (simplified):
+  // [0]: Message type (0x01 = sensor data)
+  // [1]: Device ID
+  // [2-3]: Sequence number (big-endian, low 16 bits)
+  // [4-7]: Temperature (float, big-endian IEEE 754)
+  // [8-11]: Humidity (float, big-endian IEEE 754)
+  // [12-15]: Battery voltage (float, big-endian IEEE 754)
+  // [16-19]: Timestamp offset (4 bytes)
+  // [20-23]: Checksum placeholder (4 bytes)
+
+  payload.push_back(0x01);  // Message type.
+  payload.push_back(tmpl.device_id);
+
+  // Sequence (16-bit).
+  const auto seq16 = static_cast<std::uint16_t>(heartbeat_sequence & 0xFFFF);
+  payload.push_back(static_cast<std::uint8_t>((seq16 >> 8) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>(seq16 & 0xFF));
+
+  // Helper to write float as big-endian bytes.
+  auto write_float = [&payload](float value) {
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    payload.push_back(static_cast<std::uint8_t>((bits >> 24) & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>((bits >> 16) & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>((bits >> 8) & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>(bits & 0xFF));
+  };
+
+  write_float(temperature);
+  write_float(humidity);
+  write_float(battery);
+
+  // Timestamp offset (deterministic pseudo-random).
+  const auto ts_offset = static_cast<std::uint32_t>(derive_value(profile.profile_seed, heartbeat_sequence, "iot_ts") & 0xFFFFFFFF);
+  payload.push_back(static_cast<std::uint8_t>((ts_offset >> 24) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>((ts_offset >> 16) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>((ts_offset >> 8) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>(ts_offset & 0xFF));
+
+  // Simple checksum (XOR of all bytes).
+  std::uint32_t checksum = 0;
+  for (const auto& byte : payload) {
+    checksum ^= byte;
+    checksum = (checksum << 1) | (checksum >> 31);  // Rotate left.
+  }
+  payload.push_back(static_cast<std::uint8_t>((checksum >> 24) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>((checksum >> 16) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>((checksum >> 8) & 0xFF));
+  payload.push_back(static_cast<std::uint8_t>(checksum & 0xFF));
+
+  return payload;
+}
+
+std::vector<std::uint8_t> generate_telemetry_heartbeat_payload(const ObfuscationProfile& profile,
+                                                                std::uint64_t heartbeat_sequence) {
+  std::vector<std::uint8_t> payload;
+  payload.reserve(24);
+
+  // Generic telemetry structure:
+  // [0-3]: Magic (0x54454C4D = "TELM")
+  // [4-5]: Version (0x0001)
+  // [6-7]: Payload length
+  // [8-15]: Sequence number
+  // [16-23]: Timestamp placeholder
+
+  payload.push_back(0x54);  // 'T'
+  payload.push_back(0x45);  // 'E'
+  payload.push_back(0x4C);  // 'L'
+  payload.push_back(0x4D);  // 'M'
+
+  payload.push_back(0x00);  // Version high.
+  payload.push_back(0x01);  // Version low.
+
+  payload.push_back(0x00);  // Length high.
+  payload.push_back(0x10);  // Length low (16 bytes following).
+
+  // Sequence number.
+  for (int i = 7; i >= 0; --i) {
+    payload.push_back(static_cast<std::uint8_t>((heartbeat_sequence >> (8 * i)) & 0xFF));
+  }
+
+  // Pseudo-timestamp.
+  const auto ts = derive_value(profile.profile_seed, heartbeat_sequence, "tel_ts");
+  for (int i = 7; i >= 0; --i) {
+    payload.push_back(static_cast<std::uint8_t>((ts >> (8 * i)) & 0xFF));
+  }
+
+  return payload;
+}
+
+std::vector<std::uint8_t> generate_heartbeat_payload(const ObfuscationProfile& profile,
+                                                      std::uint64_t heartbeat_sequence) {
+  switch (profile.heartbeat_type) {
+    case HeartbeatType::kEmpty:
+      return {};
+
+    case HeartbeatType::kTimestamp: {
+      std::vector<std::uint8_t> payload;
+      payload.reserve(8);
+      const auto ts = derive_value(profile.profile_seed, heartbeat_sequence, "hb_ts");
+      for (int i = 7; i >= 0; --i) {
+        payload.push_back(static_cast<std::uint8_t>((ts >> (8 * i)) & 0xFF));
+      }
+      return payload;
+    }
+
+    case HeartbeatType::kIoTSensor:
+      return generate_iot_heartbeat_payload(profile, heartbeat_sequence);
+
+    case HeartbeatType::kGenericTelemetry:
+      return generate_telemetry_heartbeat_payload(profile, heartbeat_sequence);
+  }
+
+  return {};
+}
+
+void apply_entropy_normalization(std::vector<std::uint8_t>& buffer,
+                                  const std::array<std::uint8_t, kProfileSeedSize>& seed,
+                                  std::uint64_t sequence) {
+  // Count byte frequency.
+  std::array<std::size_t, 256> frequency{};
+  for (const auto byte : buffer) {
+    ++frequency[byte];
+  }
+
+  // Find underrepresented bytes (appear less than expected).
+  const auto expected_count = buffer.size() / 256;
+  std::vector<std::uint8_t> underrepresented;
+  for (std::size_t i = 0; i < 256; ++i) {
+    if (frequency[i] < expected_count) {
+      underrepresented.push_back(static_cast<std::uint8_t>(i));
+    }
+  }
+
+  if (underrepresented.empty()) {
+    return;  // Already normalized enough.
+  }
+
+  // Generate deterministic substitution pattern.
+  std::vector<std::uint8_t> input;
+  input.reserve(seed.size() + 8 + 7);
+  input.insert(input.end(), seed.begin(), seed.end());
+  for (int i = 7; i >= 0; --i) {
+    input.push_back(static_cast<std::uint8_t>((sequence >> (8 * i)) & 0xFF));
+  }
+  const char* context = "entropy";
+  input.insert(input.end(), context, context + 7);
+
+  auto hmac = crypto::hmac_sha256(seed, input);
+
+  // XOR some bytes to increase entropy (modifying padding bytes only).
+  // This is a simplified approach - real implementation would be more sophisticated.
+  const std::size_t bytes_to_modify = std::min(buffer.size() / 10, hmac.size());
+  for (std::size_t i = 0; i < bytes_to_modify; ++i) {
+    const auto idx = static_cast<std::size_t>(hmac[i]) % buffer.size();
+    buffer[idx] ^= hmac[(i + 1) % hmac.size()];
+  }
+}
+
+void update_metrics(ObfuscationMetrics& metrics, std::uint16_t packet_size,
+                    std::uint16_t padding_size, std::uint16_t prefix_size,
+                    double interval_ms, bool is_heartbeat) {
+  ++metrics.packets_measured;
+
+  // Update packet size statistics (Welford's online algorithm).
+  const auto n = static_cast<double>(metrics.packets_measured);
+  const auto delta = static_cast<double>(packet_size) - metrics.avg_packet_size;
+  metrics.avg_packet_size += delta / n;
+  const auto delta2 = static_cast<double>(packet_size) - metrics.avg_packet_size;
+  metrics.packet_size_variance += delta * delta2;
+
+  if (metrics.packets_measured > 1) {
+    metrics.packet_size_stddev = std::sqrt(metrics.packet_size_variance / (n - 1.0));
+  }
+
+  // Update min/max.
+  if (metrics.packets_measured == 1 || packet_size < metrics.min_packet_size) {
+    metrics.min_packet_size = packet_size;
+  }
+  if (packet_size > metrics.max_packet_size) {
+    metrics.max_packet_size = packet_size;
+  }
+
+  // Update size histogram.
+  const auto bucket = std::min(static_cast<std::size_t>(packet_size / 64), std::size_t{15});
+  ++metrics.size_histogram[bucket];
+
+  // Update interval statistics.
+  if (interval_ms >= 0.0) {
+    const auto interval_delta = interval_ms - metrics.avg_interval_ms;
+    metrics.avg_interval_ms += interval_delta / n;
+    const auto interval_delta2 = interval_ms - metrics.avg_interval_ms;
+    metrics.interval_variance += interval_delta * interval_delta2;
+
+    if (metrics.packets_measured > 1) {
+      metrics.interval_stddev = std::sqrt(metrics.interval_variance / (n - 1.0));
+    }
+
+    // Update timing histogram.
+    const auto timing_bucket = std::min(static_cast<std::size_t>(interval_ms / 10.0), std::size_t{15});
+    ++metrics.timing_histogram[timing_bucket];
+  }
+
+  // Update heartbeat statistics.
+  if (is_heartbeat) {
+    ++metrics.heartbeats_sent;
+  }
+  metrics.heartbeat_ratio = static_cast<double>(metrics.heartbeats_sent) / n;
+
+  // Update padding statistics.
+  metrics.total_padding_bytes += padding_size;
+  metrics.avg_padding_per_packet = static_cast<double>(metrics.total_padding_bytes) / n;
+
+  // Update padding size class distribution (based on size).
+  if (padding_size <= 100) {
+    ++metrics.small_padding_count;
+  } else if (padding_size <= 400) {
+    ++metrics.medium_padding_count;
+  } else {
+    ++metrics.large_padding_count;
+  }
+
+  // Update prefix statistics.
+  metrics.total_prefix_bytes += prefix_size;
+  metrics.avg_prefix_per_packet = static_cast<double>(metrics.total_prefix_bytes) / n;
+}
+
+void reset_metrics(ObfuscationMetrics& metrics) {
+  metrics = ObfuscationMetrics{};
 }
 
 }  // namespace veil::obfuscation
