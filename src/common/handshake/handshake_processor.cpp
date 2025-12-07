@@ -1,5 +1,7 @@
 #include "common/handshake/handshake_processor.h"
 
+#include <sodium.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -91,6 +93,15 @@ HandshakeInitiator::HandshakeInitiator(std::vector<std::uint8_t> psk,
   }
 }
 
+HandshakeInitiator::~HandshakeInitiator() {
+  // SECURITY: Clear all sensitive key material on destruction
+  if (!psk_.empty()) {
+    sodium_memzero(psk_.data(), psk_.size());
+  }
+  sodium_memzero(ephemeral_.secret_key.data(), ephemeral_.secret_key.size());
+  sodium_memzero(ephemeral_.public_key.data(), ephemeral_.public_key.size());
+}
+
 std::vector<std::uint8_t> HandshakeInitiator::create_init() {
   ephemeral_ = crypto::generate_x25519_keypair();
   init_timestamp_ms_ = to_millis(now_fn_());
@@ -152,9 +163,15 @@ std::optional<HandshakeSession> HandshakeInitiator::consume_response(
     return std::nullopt;
   }
 
-  const auto shared = crypto::compute_shared_secret(ephemeral_.secret_key, responder_pub);
+  auto shared = crypto::compute_shared_secret(ephemeral_.secret_key, responder_pub);
   const auto info = derive_info(init_pub, responder_pub);
   const auto keys = crypto::derive_session_keys(shared, psk_, info, true);
+
+  // SECURITY: Clear shared secret immediately after key derivation
+  sodium_memzero(shared.data(), shared.size());
+
+  // SECURITY: Clear ephemeral private key after ECDH computation
+  sodium_memzero(ephemeral_.secret_key.data(), ephemeral_.secret_key.size());
 
   HandshakeSession session{
       .session_id = session_id,
@@ -175,6 +192,13 @@ HandshakeResponder::HandshakeResponder(std::vector<std::uint8_t> psk,
       now_fn_(std::move(now_fn)) {
   if (psk_.empty()) {
     throw std::invalid_argument("psk required");
+  }
+}
+
+HandshakeResponder::~HandshakeResponder() {
+  // SECURITY: Clear PSK on destruction
+  if (!psk_.empty()) {
+    sodium_memzero(psk_.data(), psk_.size());
   }
 }
 
@@ -217,10 +241,17 @@ std::optional<HandshakeResponder::Result> HandshakeResponder::handle_init(
     return std::nullopt;
   }
 
-  const auto responder_keys = crypto::generate_x25519_keypair();
-  const auto shared = crypto::compute_shared_secret(responder_keys.secret_key, init_pub);
+  auto responder_keys = crypto::generate_x25519_keypair();
+  auto shared = crypto::compute_shared_secret(responder_keys.secret_key, init_pub);
   const auto info = derive_info(init_pub, responder_keys.public_key);
   const auto session_keys = crypto::derive_session_keys(shared, psk_, info, false);
+
+  // SECURITY: Clear shared secret immediately after key derivation
+  sodium_memzero(shared.data(), shared.size());
+
+  // SECURITY: Clear responder's ephemeral private key after ECDH computation
+  sodium_memzero(responder_keys.secret_key.data(), responder_keys.secret_key.size());
+
   const auto session_id = veil::crypto::random_uint64();
   const auto resp_ts = to_millis(now_fn_());
 

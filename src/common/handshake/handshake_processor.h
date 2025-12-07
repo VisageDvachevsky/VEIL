@@ -29,6 +29,17 @@ class HandshakeInitiator {
   HandshakeInitiator(std::vector<std::uint8_t> psk, std::chrono::milliseconds skew_tolerance,
                      std::function<Clock::time_point()> now_fn = Clock::now);
 
+  /// SECURITY: Destructor clears all sensitive key material
+  ~HandshakeInitiator();
+
+  // Disable copy (contains sensitive data)
+  HandshakeInitiator(const HandshakeInitiator&) = delete;
+  HandshakeInitiator& operator=(const HandshakeInitiator&) = delete;
+
+  // Enable move
+  HandshakeInitiator(HandshakeInitiator&&) = default;
+  HandshakeInitiator& operator=(HandshakeInitiator&&) = default;
+
   std::vector<std::uint8_t> create_init();
   std::optional<HandshakeSession> consume_response(std::span<const std::uint8_t> response);
 
@@ -53,6 +64,17 @@ class HandshakeResponder {
   HandshakeResponder(std::vector<std::uint8_t> psk, std::chrono::milliseconds skew_tolerance,
                      utils::TokenBucket rate_limiter,
                      std::function<Clock::time_point()> now_fn = Clock::now);
+
+  /// SECURITY: Destructor clears all sensitive key material
+  ~HandshakeResponder();
+
+  // Disable copy (contains sensitive data)
+  HandshakeResponder(const HandshakeResponder&) = delete;
+  HandshakeResponder& operator=(const HandshakeResponder&) = delete;
+
+  // Disable move (contains non-movable replay cache with mutex)
+  HandshakeResponder(HandshakeResponder&&) = delete;
+  HandshakeResponder& operator=(HandshakeResponder&&) = delete;
 
   std::optional<Result> handle_init(std::span<const std::uint8_t> init_bytes);
 

@@ -69,6 +69,17 @@ class TransportSession {
                    TransportSessionConfig config = {},
                    std::function<TimePoint()> now_fn = Clock::now);
 
+  /// SECURITY: Destructor clears all session key material
+  ~TransportSession();
+
+  // Disable copy (contains sensitive data)
+  TransportSession(const TransportSession&) = delete;
+  TransportSession& operator=(const TransportSession&) = delete;
+
+  // Enable move
+  TransportSession(TransportSession&&) = default;
+  TransportSession& operator=(TransportSession&&) = default;
+
   // Encrypt and serialize data for transmission.
   // Returns encrypted packet bytes ready to send.
   // If data exceeds MTU, it will be fragmented into multiple packets.
