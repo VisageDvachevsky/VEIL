@@ -59,7 +59,7 @@ void ConnectionWidget::setupUi() {
   // Settings button
   settingsButton_ = new QPushButton("⚙ Settings", this);
   settingsButton_->setStyleSheet("background: #252932; padding: 12px;");
-  connect(settingsButton_, &QPushButton::clicked, this, &settingsRequested);
+  connect(settingsButton_, &QPushButton::clicked, this, &ConnectionWidget::settingsRequested);
   layout->addWidget(settingsButton_);
 }
 
