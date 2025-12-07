@@ -20,7 +20,7 @@ void DiagnosticsWidget::setupUi() {
   // Back button
   auto* backButton = new QPushButton("← Back", this);
   backButton->setStyleSheet("background: #252932; padding: 8px;");
-  connect(backButton, &QPushButton::clicked, this, &backRequested);
+  connect(backButton, &QPushButton::clicked, this, &DiagnosticsWidget::backRequested);
   layout->addWidget(backButton);
 
   // Title
